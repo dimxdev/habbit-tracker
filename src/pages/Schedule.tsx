@@ -13,6 +13,7 @@ export default function Schedule() {
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showClearDayModal, setShowClearDayModal] = useState(false);
   const [conflictInfo, setConflictInfo] = useState<{
     sourceDay: DayKey;
     conflicts: Array<{ src: TimeSlot; existing: TimeSlot }>;
@@ -45,18 +46,61 @@ export default function Schedule() {
     setDeleteConfirmId(null);
   };
 
-  // Eksekusi copy — full replace
-  const executeCopy = (sourceDay: DayKey) => {
-    const sourceSlots = data.schedule[sourceDay].map((s) => ({
+  // Merge: tambah slot dari sourceDay ke selectedDay tanpa menghapus yang existing
+  const executeMerge = (sourceDay: DayKey) => {
+    const newSlots = data.schedule[sourceDay].map((s) => ({
       ...s,
       id: generateId(),
     }));
     setData((prev) => ({
       ...prev,
-      schedule: { ...prev.schedule, [selectedDay]: sourceSlots },
+      schedule: {
+        ...prev.schedule,
+        [selectedDay]: [...prev.schedule[selectedDay], ...newSlots],
+      },
     }));
     setConflictInfo(null);
     setShowCopyModal(false);
+  };
+
+  // Merge hanya slot yang tidak bentrok, sisanya dilewati
+  const executeMergeSkipConflicts = () => {
+    if (!conflictInfo) return;
+    const conflictingSrcIds = new Set(conflictInfo.conflicts.map((c) => c.src.id));
+    const newSlots = data.schedule[conflictInfo.sourceDay]
+      .filter((s) => !conflictingSrcIds.has(s.id))
+      .map((s) => ({ ...s, id: generateId() }));
+    setData((prev) => ({
+      ...prev,
+      schedule: {
+        ...prev.schedule,
+        [selectedDay]: [...prev.schedule[selectedDay], ...newSlots],
+      },
+    }));
+    setConflictInfo(null);
+  };
+
+  // Replace: ganti semua slot selectedDay dengan sourceDay
+  const executeReplace = (sourceDay: DayKey) => {
+    const newSlots = data.schedule[sourceDay].map((s) => ({
+      ...s,
+      id: generateId(),
+    }));
+    setData((prev) => ({
+      ...prev,
+      schedule: { ...prev.schedule, [selectedDay]: newSlots },
+    }));
+    setConflictInfo(null);
+    setShowCopyModal(false);
+  };
+
+  // Hapus semua slot hari yang sedang dipilih
+  const clearDay = () => {
+    setData((prev) => ({
+      ...prev,
+      schedule: { ...prev.schedule, [selectedDay]: [] },
+    }));
+    setShowClearDayModal(false);
   };
 
   // Request copy — cek konflik dulu
@@ -70,7 +114,6 @@ export default function Schedule() {
         const overlaps = src.start < existing.end && src.end > existing.start;
         const identical = src.start === existing.start && src.end === existing.end;
         if (overlaps && !identical) {
-          // hindari duplikat pasangan yang sama
           const alreadyAdded = conflicts.some(
             (c) => c.src.id === src.id && c.existing.id === existing.id
           );
@@ -83,7 +126,7 @@ export default function Schedule() {
       setShowCopyModal(false);
       setConflictInfo({ sourceDay, conflicts });
     } else {
-      executeCopy(sourceDay);
+      executeMerge(sourceDay);
     }
   };
 
@@ -117,15 +160,27 @@ export default function Schedule() {
           <h2 className="text-deep-navy font-semibold text-base md:text-lg dark:text-slate-100">
             {DAY_LABELS[selectedDay]}
           </h2>
-          <button
-            type="button"
-            onClick={() => setShowCopyModal(true)}
-            className="inline-flex items-center gap-1.5 border border-sky-tint text-ocean-blue text-sm font-medium px-3 py-1.5 rounded-xl hover:bg-mist transition-colors dark:text-sky-tint dark:hover:bg-night-border"
-          >
-            <Copy size={15} />
-            <span className="hidden sm:inline">Copy dari hari lain</span>
-            <span className="sm:hidden">Copy</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {slots.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowClearDayModal(true)}
+                className="inline-flex items-center gap-1.5 border border-red-200 text-red-500 text-sm font-medium px-3 py-1.5 rounded-xl hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+              >
+                <Trash2 size={15} />
+                <span className="hidden sm:inline">Hapus Semua</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowCopyModal(true)}
+              className="inline-flex items-center gap-1.5 border border-sky-tint text-ocean-blue text-sm font-medium px-3 py-1.5 rounded-xl hover:bg-mist transition-colors dark:text-sky-tint dark:hover:bg-night-border"
+            >
+              <Copy size={15} />
+              <span className="hidden sm:inline">Copy dari hari lain</span>
+              <span className="sm:hidden">Copy</span>
+            </button>
+          </div>
         </div>
 
         {/* Slot List */}
@@ -202,6 +257,37 @@ export default function Schedule() {
         </button>
       </div>
 
+      {/* Clear Day Modal */}
+      {showClearDayModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
+            <h3 className="text-deep-navy font-bold text-base dark:text-slate-100">
+              Hapus Semua Jadwal {DAY_LABELS[selectedDay]}?
+            </h3>
+            <p className="text-slate-500 text-sm dark:text-slate-400">
+              Seluruh {slots.length} slot pada hari{' '}
+              <strong>{DAY_LABELS[selectedDay]}</strong> akan dihapus. Aksi ini tidak bisa dibatalkan.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowClearDayModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium hover:bg-cloud-white transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-night-border"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={clearDay}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+              >
+                Hapus Semua
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Slot Modal */}
       {showSlotModal && (
         <SlotModal
@@ -233,8 +319,8 @@ export default function Schedule() {
                 <h3 className="text-deep-navy font-bold text-base dark:text-slate-100">Ada Jadwal Bentrok</h3>
                 <p className="text-slate-500 text-sm mt-0.5 dark:text-slate-400">
                   {conflictInfo.conflicts.length} slot dari{' '}
-                  <strong>{DAY_LABELS[conflictInfo.sourceDay]}</strong> bertabrakan dengan
-                  jadwal <strong>{DAY_LABELS[selectedDay]}</strong>.
+                  <strong>{DAY_LABELS[conflictInfo.sourceDay]}</strong> bentrok dengan
+                  jadwal <strong>{DAY_LABELS[selectedDay]}</strong> yang sudah ada.
                 </p>
               </div>
             </div>
@@ -253,23 +339,32 @@ export default function Schedule() {
             </div>
 
             <p className="text-slate-500 text-xs dark:text-slate-400">
-              Jika tetap copy, semua jadwal <strong>{DAY_LABELS[selectedDay]}</strong> akan diganti.
+              Pilih tindakan untuk slot yang tidak bentrok tetap ditambahkan.
             </p>
 
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConflictInfo(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium hover:bg-cloud-white transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-night-border"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={executeMergeSkipConflicts}
+                  className="flex-1 py-2.5 rounded-xl bg-ocean-blue text-white font-medium hover:bg-deep-navy transition-colors"
+                >
+                  Lewati Bentrok
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setConflictInfo(null)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium hover:bg-cloud-white transition-colors dark:border-slate-600 dark:text-slate-300 dark:hover:bg-night-border"
+                onClick={() => executeReplace(conflictInfo.sourceDay)}
+                className="w-full py-2.5 rounded-xl border border-red-300 text-red-500 font-medium hover:bg-red-50 transition-colors dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
               >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={() => executeCopy(conflictInfo.sourceDay)}
-                className="flex-1 py-2.5 rounded-xl bg-ocean-blue text-white font-medium hover:bg-deep-navy transition-colors"
-              >
-                Tetap Copy
+                Ganti Semua Jadwal {DAY_LABELS[selectedDay]}
               </button>
             </div>
           </div>
