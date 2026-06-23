@@ -48,10 +48,10 @@ export default function Schedule() {
 
   // Merge: tambah slot dari sourceDay ke selectedDay tanpa menghapus yang existing
   const executeMerge = (sourceDay: DayKey) => {
-    const newSlots = data.schedule[sourceDay].map((s) => ({
-      ...s,
-      id: generateId(),
-    }));
+    const targetSlots = data.schedule[selectedDay];
+    const newSlots = data.schedule[sourceDay]
+      .filter((s) => !targetSlots.some((t) => t.start === s.start && t.end === s.end))
+      .map((s) => ({ ...s, id: generateId() }));
     setData((prev) => ({
       ...prev,
       schedule: {
@@ -67,8 +67,10 @@ export default function Schedule() {
   const executeMergeSkipConflicts = () => {
     if (!conflictInfo) return;
     const conflictingSrcIds = new Set(conflictInfo.conflicts.map((c) => c.src.id));
+    const targetSlots = data.schedule[selectedDay];
     const newSlots = data.schedule[conflictInfo.sourceDay]
       .filter((s) => !conflictingSrcIds.has(s.id))
+      .filter((s) => !targetSlots.some((t) => t.start === s.start && t.end === s.end))
       .map((s) => ({ ...s, id: generateId() }));
     setData((prev) => ({
       ...prev,
@@ -520,8 +522,8 @@ function CopyModal({
 
       {selected && (
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Jadwal <strong>{DAY_LABELS[currentDay]}</strong> akan diganti dengan jadwal{' '}
-          <strong>{DAY_LABELS[selected]}</strong>.
+          Jadwal hari <strong>{DAY_LABELS[selected]}</strong> akan disalin ke hari{' '}
+          <strong>{DAY_LABELS[currentDay]}</strong>.
         </p>
       )}
 
