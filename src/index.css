@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Dark mode pakai class `.dark` di <html>, bukan prefers-color-scheme */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-deep-navy: #0A2540;
+  --color-ocean-blue: #1B6CA8;
+  --color-sky-tint: #5BA4CF;
+  --color-mist: #D6E6F2;
+  --color-cloud-white: #F7FAFC;
+
+  /* Surface untuk dark mode */
+  --color-night: #0B1622;
+  --color-night-soft: #15253B;
+  --color-night-border: #24364F;
+
+  --font-family-sans: 'Inter', sans-serif;
+}
+
+/* Samakan background <body> dengan tema, supaya area yang muncul akibat
+   margin-collapse (mis. mt-6 di header) tidak terlihat putih saat dark mode. */
+@layer base {
+  body {
+    background-color: var(--color-cloud-white);
+  }
+  .dark body {
+    background-color: var(--color-night);
+  }
+}
