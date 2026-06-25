@@ -43,6 +43,17 @@ export const parseDateKey = (key: string): Date => {
   return new Date(y, m - 1, d, 12, 0, 0);
 };
 
+// Geser sebuah date key sebanyak `delta` hari (boleh negatif)
+export const shiftDateKey = (key: string, delta: number): string => {
+  const d = parseDateKey(key);
+  d.setDate(d.getDate() + delta);
+  return getDateKey(d);
+};
+
+// Selisih hari b - a (bulat)
+export const daysBetweenKeys = (a: string, b: string): number =>
+  Math.round((parseDateKey(b).getTime() - parseDateKey(a).getTime()) / 86_400_000);
+
 export const MONTH_LABELS = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
@@ -83,6 +94,16 @@ export const formatDateIndonesia = (date: Date): string => {
 
 export const generateId = (): string => {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
+};
+
+// "olahraga pagi" -> "Olahraga Pagi" (tiap kata berhuruf besar di depan)
+export const toTitleCase = (str: string): string =>
+  str.trim().replace(/\b\w/g, (c) => c.toUpperCase());
+
+// "hari yang mantap" -> "Hari yang mantap" (hanya awal kalimat)
+export const toSentenceCase = (str: string): string => {
+  const t = str.trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 };
 
 export const getSlotStatus = (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight } from 'lucide-react';
+import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight, Check, Target, Flame } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import type { AppData, TimeSlot, DailyNote } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
@@ -14,7 +14,10 @@ import {
   getSlotStatus,
 } from '../utils/helpers';
 import { getNotesFor, addNote, updateNote, deleteNote } from '../utils/dailyNotes';
+import { isDone, toggleDone, countDone } from '../utils/completion';
+import { isHabitDone, toggleHabit, computeStreak } from '../utils/habits';
 import DailyNotesEditor from '../components/DailyNotesEditor';
+import ProgressRing from '../components/ProgressRing';
 
 export default function Dashboard() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
@@ -47,12 +50,24 @@ export default function Dashboard() {
     return 0;
   });
 
-  const addJournal = (text: string) =>
-    setData((prev) => addNote(prev, 'journal', todayDateKey, text));
-  const updateJournal = (id: string, text: string) =>
-    setData((prev) => updateNote(prev, 'journal', todayDateKey, id, text));
+  const addJournal = (text: string, time?: string) =>
+    setData((prev) => addNote(prev, 'journal', todayDateKey, text, time));
+  const updateJournal = (id: string, text: string, time?: string) =>
+    setData((prev) => updateNote(prev, 'journal', todayDateKey, id, text, time));
   const deleteJournal = (id: string) =>
     setData((prev) => deleteNote(prev, 'journal', todayDateKey, id));
+
+  // Progres hari ini = jadwal + agenda yang ditandai selesai
+  const allTodayIds = [...slots.map((s) => s.id), ...agendaToday.map((a) => a.id)];
+  const totalCount = allTodayIds.length;
+  const doneCount = countDone(data, todayDateKey, allTodayIds);
+  const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+  const toggleItem = (id: string) => setData((prev) => toggleDone(prev, todayDateKey, id));
+
+  // Habit
+  const habits = data.habits ?? [];
+  const habitDoneCount = habits.filter((h) => isHabitDone(data, todayDateKey, h.id)).length;
+  const toggleHabitToday = (id: string) => setData((prev) => toggleHabit(prev, todayDateKey, id));
 
   return (
     <div>
@@ -75,41 +90,23 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Agenda Hari Ini — pengingat dari agenda yang jatuh hari ini */}
-        {agendaToday.length > 0 && (
-          <div className="bg-blue-50 rounded-2xl border border-sky-tint p-5 shadow-sm dark:bg-ocean-blue/10 dark:border-ocean-blue/40">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
-                <CalendarClock size={18} className="text-ocean-blue dark:text-sky-tint" />
-                Agenda Khusus Hari Ini
+        {/* Progres Hari Ini */}
+        {totalCount > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 flex items-center gap-5 dark:bg-night-soft dark:border-night-border">
+            <ProgressRing value={percent}>
+              <span className="text-deep-navy font-bold text-lg tabular-nums dark:text-slate-100">
+                {percent}%
+              </span>
+            </ProgressRing>
+            <div className="min-w-0">
+              <h2 className="text-deep-navy font-semibold text-base md:text-lg dark:text-slate-100">
+                Progres Hari Ini
               </h2>
-              <Link
-                to={`/calendar?date=${todayDateKey}`}
-                className="inline-flex items-center gap-0.5 text-xs font-medium text-ocean-blue hover:underline dark:text-sky-tint"
-              >
-                Kelola
-                <ChevronRight size={14} />
-              </Link>
+              <p className="text-slate-500 text-sm mt-0.5 dark:text-slate-400">
+                <strong className="text-deep-navy dark:text-slate-100">{doneCount}</strong> dari{' '}
+                {totalCount} aktivitas selesai
+              </p>
             </div>
-            <ul className="space-y-2">
-              {agendaToday.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-start gap-2.5 rounded-xl bg-white border border-sky-tint/60 px-3 py-2.5 dark:bg-night-soft dark:border-ocean-blue/30"
-                >
-                  {item.time ? (
-                    <span className="mt-0.5 text-xs font-semibold text-ocean-blue bg-mist px-1.5 py-0.5 rounded shrink-0 tabular-nums dark:text-sky-tint dark:bg-night-border">
-                      {item.time}
-                    </span>
-                  ) : (
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-ocean-blue shrink-0 dark:bg-sky-tint" />
-                  )}
-                  <span className="flex-1 min-w-0 text-deep-navy text-sm wrap-break-word dark:text-slate-100">
-                    {item.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
           </div>
         )}
 
@@ -141,11 +138,120 @@ export default function Dashboard() {
             <div className="grid gap-2.5 sm:grid-cols-2">
               {slots.map((slot) => {
                 const status = getSlotStatus(slot.start, slot.end, currentTime);
-                return <SlotCard key={slot.id} slot={slot} status={status} />;
+                return (
+                  <SlotCard
+                    key={slot.id}
+                    slot={slot}
+                    status={status}
+                    done={isDone(data, todayDateKey, slot.id)}
+                    onToggle={() => toggleItem(slot.id)}
+                  />
+                );
               })}
             </div>
           )}
         </div>
+
+        {/* Agenda Khusus Hari Ini — pengingat agenda yang jatuh hari ini */}
+        {agendaToday.length > 0 && (
+          <div className="bg-blue-50 rounded-2xl border border-sky-tint p-5 shadow-sm dark:bg-ocean-blue/10 dark:border-ocean-blue/40">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
+                <CalendarClock size={18} className="text-ocean-blue dark:text-sky-tint" />
+                Agenda Khusus Hari Ini
+              </h2>
+              <Link
+                to={`/calendar?date=${todayDateKey}`}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-ocean-blue hover:underline dark:text-sky-tint"
+              >
+                Kelola
+                <ChevronRight size={14} />
+              </Link>
+            </div>
+            <ul className="space-y-2">
+              {agendaToday.map((item) => {
+                const done = isDone(data, todayDateKey, item.id);
+                return (
+                  <li
+                    key={item.id}
+                    className="flex items-center gap-2.5 rounded-xl bg-white border border-sky-tint/60 px-3 py-2.5 dark:bg-night-soft dark:border-ocean-blue/30"
+                  >
+                    <CheckButton
+                      done={done}
+                      onClick={() => toggleItem(item.id)}
+                      label={`${done ? 'Batalkan' : 'Tandai selesai'} ${item.text}`}
+                    />
+                    {item.time && (
+                      <span className="text-xs font-semibold text-ocean-blue bg-mist px-1.5 py-0.5 rounded shrink-0 tabular-nums dark:text-sky-tint dark:bg-night-border">
+                        {item.time}
+                      </span>
+                    )}
+                    <span
+                      className={`flex-1 min-w-0 text-sm wrap-break-word ${
+                        done
+                          ? 'line-through text-slate-400 dark:text-slate-500'
+                          : 'text-deep-navy dark:text-slate-100'
+                      }`}
+                    >
+                      {item.text}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* Habit Hari Ini — centang cepat */}
+        {habits.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
+                <Target size={18} className="text-ocean-blue dark:text-sky-tint" />
+                Habit Hari Ini
+              </h2>
+              <Link
+                to="/habits"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-ocean-blue hover:underline dark:text-sky-tint"
+              >
+                {habitDoneCount}/{habits.length} · Semua
+                <ChevronRight size={14} />
+              </Link>
+            </div>
+            <ul className="space-y-2">
+              {habits.map((h) => {
+                const hdone = isHabitDone(data, todayDateKey, h.id);
+                const streak = computeStreak(data, h.id, todayDateKey);
+                return (
+                  <li key={h.id} className="flex items-center gap-3">
+                    <CheckButton
+                      done={hdone}
+                      round
+                      onClick={() => toggleHabitToday(h.id)}
+                      label={`${hdone ? 'Batalkan' : 'Tandai'} ${h.name}`}
+                    />
+                    <span
+                      className={`flex-1 min-w-0 text-sm truncate ${
+                        hdone
+                          ? 'line-through text-slate-400 dark:text-slate-500'
+                          : 'text-deep-navy dark:text-slate-100'
+                      }`}
+                    >
+                      {h.icon ? `${h.icon} ` : ''}
+                      {h.name}
+                    </span>
+                    {streak > 0 && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-500 shrink-0">
+                        <Flame size={13} />
+                        {streak}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
         {/* Catatan Harian — jurnal/refleksi hari ini (paling bawah) */}
         <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
@@ -161,6 +267,8 @@ export default function Dashboard() {
             )}
           </div>
           <DailyNotesEditor
+            withTime
+            defaultTimeNow
             notes={journalToday}
             onAdd={addJournal}
             onUpdate={updateJournal}
@@ -174,15 +282,47 @@ export default function Dashboard() {
   );
 }
 
+function CheckButton({
+  done,
+  onClick,
+  label,
+  round = false,
+}: {
+  done: boolean;
+  onClick: () => void;
+  label: string;
+  round?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={`shrink-0 w-5 h-5 ${round ? 'rounded-full' : 'rounded-md'} border-2 grid place-items-center transition-colors ${
+        done
+          ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
+          : 'border-slate-300 text-transparent hover:border-ocean-blue dark:border-slate-600 dark:hover:border-sky-tint'
+      }`}
+    >
+      <Check size={13} strokeWidth={3} />
+    </button>
+  );
+}
+
 function SlotCard({
   slot,
   status,
+  done,
+  onToggle,
 }: {
   slot: TimeSlot;
   status: 'past' | 'current' | 'future';
+  done: boolean;
+  onToggle: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasNotes = !!slot.notes;
+  const checkLabel = `${done ? 'Batalkan' : 'Tandai selesai'} ${slot.activity || 'aktivitas'}`;
 
   if (status === 'past') {
     return (
@@ -190,14 +330,19 @@ function SlotCard({
         {hasNotes && !expanded && (
           <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
         )}
-        <div
-          className={`px-4 py-3 flex items-center justify-between gap-3 ${hasNotes ? 'cursor-pointer' : ''}`}
-          onClick={() => hasNotes && setExpanded((v) => !v)}
-        >
-          <span className="text-slate-400 text-sm font-medium whitespace-nowrap dark:text-slate-500">
-            {slot.start} – {slot.end}
-          </span>
-          <span className="text-slate-400 text-sm truncate dark:text-slate-500">{slot.activity || '—'}</span>
+        <div className="px-4 py-3 flex items-center gap-3">
+          <CheckButton done={done} onClick={onToggle} label={checkLabel} />
+          <div
+            className={`flex-1 flex items-center justify-between gap-3 min-w-0 ${hasNotes ? 'cursor-pointer' : ''}`}
+            onClick={() => hasNotes && setExpanded((v) => !v)}
+          >
+            <span className="text-slate-400 text-sm font-medium whitespace-nowrap dark:text-slate-500">
+              {slot.start} – {slot.end}
+            </span>
+            <span className={`text-slate-400 text-sm truncate dark:text-slate-500 ${done ? 'line-through' : ''}`}>
+              {slot.activity || '—'}
+            </span>
+          </div>
         </div>
         {expanded && hasNotes && (
           <div className="px-4 pb-3 text-slate-400 text-xs dark:text-slate-500">
@@ -220,7 +365,16 @@ function SlotCard({
             Sekarang
           </span>
         </div>
-        <p className="text-deep-navy font-semibold text-base dark:text-slate-100">{slot.activity || '—'}</p>
+        <div className="flex items-center gap-2.5">
+          <CheckButton done={done} onClick={onToggle} label={checkLabel} />
+          <p
+            className={`flex-1 min-w-0 font-semibold text-base ${
+              done ? 'line-through text-slate-400 dark:text-slate-500' : 'text-deep-navy dark:text-slate-100'
+            }`}
+          >
+            {slot.activity || '—'}
+          </p>
+        </div>
         {hasNotes && (
           <p className="text-ocean-blue/70 text-xs mt-1.5 dark:text-sky-tint/60">{slot.notes}</p>
         )}
@@ -233,14 +387,19 @@ function SlotCard({
       {hasNotes && !expanded && (
         <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-ocean-blue dark:bg-sky-tint" />
       )}
-      <div
-        className={`px-4 py-3 flex items-center justify-between gap-3 ${hasNotes ? 'cursor-pointer' : ''}`}
-        onClick={() => hasNotes && setExpanded((v) => !v)}
-      >
-        <span className="text-ocean-blue text-sm font-medium whitespace-nowrap dark:text-sky-tint">
-          {slot.start} – {slot.end}
-        </span>
-        <span className="text-deep-navy text-sm truncate dark:text-slate-100">{slot.activity || '—'}</span>
+      <div className="px-4 py-3 flex items-center gap-3">
+        <CheckButton done={done} onClick={onToggle} label={checkLabel} />
+        <div
+          className={`flex-1 flex items-center justify-between gap-3 min-w-0 ${hasNotes ? 'cursor-pointer' : ''}`}
+          onClick={() => hasNotes && setExpanded((v) => !v)}
+        >
+          <span className="text-ocean-blue text-sm font-medium whitespace-nowrap dark:text-sky-tint">
+            {slot.start} – {slot.end}
+          </span>
+          <span className={`text-deep-navy text-sm truncate dark:text-slate-100 ${done ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+            {slot.activity || '—'}
+          </span>
+        </div>
       </div>
       {expanded && hasNotes && (
         <div className="px-4 pb-3 text-slate-500 text-xs dark:text-slate-400">

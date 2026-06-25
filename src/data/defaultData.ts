@@ -12,4 +12,7 @@ export const DEFAULT_DATA: AppData = {
   },
   journal: {},
   agenda: {},
+  completed: {},
+  habits: [],
+  habitLogs: {},
 };

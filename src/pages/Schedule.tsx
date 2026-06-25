@@ -4,7 +4,7 @@ import useStorage from '../hooks/useStorage';
 import type { AppData, DayKey, TimeSlot } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
 import PageHeader from '../components/PageHeader';
-import { DAY_KEYS, DAY_LABELS, DAY_SHORT, getTodayKey, generateId } from '../utils/helpers';
+import { DAY_KEYS, DAY_LABELS, DAY_SHORT, getTodayKey, generateId, toTitleCase, toSentenceCase } from '../utils/helpers';
 
 export default function Schedule() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
@@ -422,8 +422,13 @@ function SlotModal({
       return;
     }
 
-    const titleCase = activity.trim().replace(/\b\w/g, (c) => c.toUpperCase());
-    onSave({ id: initial?.id ?? generateId(), start, end, activity: titleCase, notes: notes.trim() || undefined });
+    onSave({
+      id: initial?.id ?? generateId(),
+      start,
+      end,
+      activity: toTitleCase(activity),
+      notes: notes.trim() ? toSentenceCase(notes) : undefined,
+    });
   };
 
   return (

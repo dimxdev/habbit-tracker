@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 import type { DailyNote } from '../types';
+import { getCurrentTimeString, toTitleCase, toSentenceCase } from '../utils/helpers';
 
 export default function DailyNotesEditor({
   notes,
@@ -10,6 +11,8 @@ export default function DailyNotesEditor({
   placeholder = 'Tambah catatan…',
   emptyText,
   withTime = false,
+  defaultTimeNow = false,
+  capitalize = 'sentence',
 }: {
   notes: DailyNote[];
   onAdd: (text: string, time?: string) => void;
@@ -18,9 +21,17 @@ export default function DailyNotesEditor({
   placeholder?: string;
   emptyText?: string;
   withTime?: boolean;
+  // Isi otomatis input jam dengan jam sekarang (untuk jurnal)
+  defaultTimeNow?: boolean;
+  // Gaya kapitalisasi teks: 'sentence' (awal kalimat) atau 'title' (tiap kata)
+  capitalize?: 'sentence' | 'title';
 }) {
+  const formatText = capitalize === 'title' ? toTitleCase : toSentenceCase;
+  const initialDraftTime = () =>
+    withTime && defaultTimeNow ? getCurrentTimeString() : '';
+
   const [draft, setDraft] = useState('');
-  const [draftTime, setDraftTime] = useState('');
+  const [draftTime, setDraftTime] = useState(initialDraftTime);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editTime, setEditTime] = useState('');
@@ -35,12 +46,20 @@ export default function DailyNotesEditor({
       })
     : notes;
 
+  // Tentukan jam yang disimpan. Untuk jurnal (defaultTimeNow) jam wajib:
+  // kalau dikosongkan, jatuh ke jam sekarang. Untuk agenda boleh kosong.
+  const resolveTime = (t: string): string | undefined => {
+    if (!withTime) return undefined;
+    if (t) return t;
+    return defaultTimeNow ? getCurrentTimeString() : undefined;
+  };
+
   const handleAdd = () => {
-    const text = draft.trim();
+    const text = formatText(draft);
     if (!text) return;
-    onAdd(text, withTime ? draftTime || undefined : undefined);
+    onAdd(text, resolveTime(draftTime));
     setDraft('');
-    setDraftTime('');
+    setDraftTime(initialDraftTime());
   };
 
   const startEdit = (note: DailyNote) => {
@@ -50,8 +69,8 @@ export default function DailyNotesEditor({
   };
 
   const saveEdit = () => {
-    const text = editText.trim();
-    if (editingId && text) onUpdate(editingId, text, withTime ? editTime || undefined : undefined);
+    const text = formatText(editText);
+    if (editingId && text) onUpdate(editingId, text, resolveTime(editTime));
     setEditingId(null);
     setEditText('');
     setEditTime('');
