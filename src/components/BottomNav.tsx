@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom';
-import { Home, CalendarDays, Settings } from 'lucide-react';
+import { Home, CalendarDays, CalendarRange, Settings } from 'lucide-react';
 
 const tabs = [
   { to: '/',         label: 'Dashboard', Icon: Home },
   { to: '/schedule', label: 'Jadwal',    Icon: CalendarDays },
+  { to: '/calendar', label: 'Kalender',  Icon: CalendarRange },
   { to: '/settings', label: 'Settings',  Icon: Settings },
 ];
 

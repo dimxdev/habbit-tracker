@@ -32,6 +32,30 @@ export const getTodayKey = (): DayKey => {
   return JS_DAY_TO_KEY[new Date().getDay()];
 };
 
+// Kunci tanggal lokal 'YYYY-MM-DD' (bukan UTC, biar tidak geser zona waktu)
+export const getDateKey = (date: Date = new Date()): string => {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+// 'YYYY-MM-DD' -> Date lokal (tengah hari, supaya aman dari pergeseran DST)
+export const parseDateKey = (key: string): Date => {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0);
+};
+
+export const MONTH_LABELS = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+// Format panjang Indonesia dari sebuah date key, mis. 'Kamis, 25 Juni 2026'
+export const formatDateKeyLong = (key: string): string => {
+  return formatDateIndonesia(parseDateKey(key));
+};
+
+// Apakah dua tanggal jatuh pada hari kalender yang sama
+export const isSameDay = (a: Date, b: Date): boolean => getDateKey(a) === getDateKey(b);
+
 export const getDayOfYear = (date: Date): number => {
   const start = new Date(date.getFullYear(), 0, 0);
   const diff = date.getTime() - start.getTime();

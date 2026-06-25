@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Schedule  = lazy(() => import('./pages/Schedule'));
+const Calendar  = lazy(() => import('./pages/Calendar'));
 const Settings  = lazy(() => import('./pages/Settings'));
 
 function PageLoader() {
@@ -21,6 +22,7 @@ export default function App() {
         <Routes>
           <Route path="/"         element={<Dashboard />} />
           <Route path="/schedule" element={<Schedule />} />
+          <Route path="/calendar" element={<Calendar />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>

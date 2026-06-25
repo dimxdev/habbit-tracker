@@ -10,4 +10,6 @@ export const DEFAULT_DATA: AppData = {
     saturday:  [],
     sunday:    [],
   },
+  journal: {},
+  agenda: {},
 };

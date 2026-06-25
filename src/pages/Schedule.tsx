@@ -200,6 +200,9 @@ export default function Schedule() {
                       {slot.start} – {slot.end}
                     </p>
                     <p className="text-deep-navy text-sm truncate dark:text-slate-100">{slot.activity || '—'}</p>
+                    {slot.notes && (
+                      <p className="text-slate-400 text-xs truncate mt-0.5 dark:text-slate-500">{slot.notes}</p>
+                    )}
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <button
@@ -402,6 +405,7 @@ function SlotModal({
   const [start, setStart] = useState(initial?.start ?? '');
   const [end, setEnd] = useState(initial?.end ?? '');
   const [activity, setActivity] = useState(initial?.activity ?? '');
+  const [notes, setNotes] = useState(initial?.notes ?? '');
   const [error, setError] = useState('');
 
   const handleSave = () => {
@@ -419,7 +423,7 @@ function SlotModal({
     }
 
     const titleCase = activity.trim().replace(/\b\w/g, (c) => c.toUpperCase());
-    onSave({ id: initial?.id ?? generateId(), start, end, activity: titleCase });
+    onSave({ id: initial?.id ?? generateId(), start, end, activity: titleCase, notes: notes.trim() || undefined });
   };
 
   return (
@@ -460,6 +464,19 @@ function SlotModal({
             value={activity}
             onChange={(e) => setActivity(e.target.value)}
             className="w-full border border-mist rounded-xl px-4 py-2.5 text-deep-navy placeholder:text-slate-300 focus:outline-none focus:border-ocean-blue focus:ring-2 focus:ring-sky-tint/30 dark:border-night-border dark:bg-night dark:text-slate-100 dark:placeholder:text-slate-600"
+          />
+        </div>
+        <div>
+          <label htmlFor="slot-notes" className="text-sm text-slate-500 mb-1 block dark:text-slate-400">
+            Catatan <span className="text-slate-400 font-normal dark:text-slate-500">(opsional)</span>
+          </label>
+          <textarea
+            id="slot-notes"
+            rows={2}
+            placeholder="Contoh: Lari 5km, bawa bekal, dll."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full border border-mist rounded-xl px-4 py-2.5 text-deep-navy placeholder:text-slate-300 focus:outline-none focus:border-ocean-blue focus:ring-2 focus:ring-sky-tint/30 resize-none dark:border-night-border dark:bg-night dark:text-slate-100 dark:placeholder:text-slate-600"
           />
         </div>
         {error && <p className="text-red-500 text-sm">{error}</p>}
