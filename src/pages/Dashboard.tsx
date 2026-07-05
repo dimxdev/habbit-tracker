@@ -15,9 +15,19 @@ import {
 } from '../utils/helpers';
 import { getNotesFor, addNote, updateNote, deleteNote } from '../utils/dailyNotes';
 import { isDone, toggleDone, countDone } from '../utils/completion';
-import { isHabitDone, toggleHabit, computeStreak } from '../utils/habits';
+import {
+  cycleHabit,
+  isPeriodComplete,
+  computeStreak,
+  getHabitPeriod,
+  getHabitCount,
+  perDayCap,
+  weeklyProgress,
+  activeHabits,
+} from '../utils/habits';
 import DailyNotesEditor from '../components/DailyNotesEditor';
 import ProgressRing from '../components/ProgressRing';
+// import WeeklyRecap from '../components/WeeklyRecap'; // sementara dinonaktifkan
 
 export default function Dashboard() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
@@ -36,7 +46,10 @@ export default function Dashboard() {
   const today = new Date();
   const todayKey = getTodayKey();
   const todayDateKey = getDateKey(today);
-  const motivation = motivations[getDayOfYear(today) % motivations.length];
+  const motivation =
+    data.useCustomMotivation && data.activeMotivation?.trim()
+      ? data.activeMotivation
+      : motivations[getDayOfYear(today) % motivations.length];
   const slots: TimeSlot[] = [...(data.schedule[todayKey] ?? [])].sort((a, b) =>
     a.start.localeCompare(b.start)
   );
@@ -64,10 +77,9 @@ export default function Dashboard() {
   const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
   const toggleItem = (id: string) => setData((prev) => toggleDone(prev, todayDateKey, id));
 
-  // Habit
-  const habits = data.habits ?? [];
-  const habitDoneCount = habits.filter((h) => isHabitDone(data, todayDateKey, h.id)).length;
-  const toggleHabitToday = (id: string) => setData((prev) => toggleHabit(prev, todayDateKey, id));
+  // Habit (hanya yang aktif; yang diarsipkan disembunyikan)
+  const habits = activeHabits(data);
+  const habitDoneCount = habits.filter((h) => isPeriodComplete(data, h, todayDateKey)).length;
 
   return (
     <div>
@@ -202,6 +214,9 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Rekap mingguan — sementara dinonaktifkan */}
+        {/* {habits.length > 0 && <WeeklyRecap data={data} todayKey={todayDateKey} />} */}
+
         {/* Habit Hari Ini — centang cepat */}
         {habits.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
@@ -220,19 +235,30 @@ export default function Dashboard() {
             </div>
             <ul className="space-y-2">
               {habits.map((h) => {
-                const hdone = isHabitDone(data, todayDateKey, h.id);
-                const streak = computeStreak(data, h.id, todayDateKey);
+                const isWeekly = getHabitPeriod(h) === 'week';
+                const cap = perDayCap(h);
+                const todayCount = getHabitCount(data, todayDateKey, h.id);
+                // "Tercentang" = pencatatan hari ini sudah cukup (harian: penuh target; mingguan: minimal sekali)
+                const todayChecked = todayCount >= cap;
+                const streak = computeStreak(data, h, todayDateKey);
+                // Keterangan progres untuk habit non-biasa
+                const week = weeklyProgress(data, h, todayDateKey);
+                const progress = isWeekly
+                  ? `${week.done}/${week.target} mgg`
+                  : cap > 1
+                    ? `${todayCount}/${cap}`
+                    : null;
                 return (
                   <li key={h.id} className="flex items-center gap-3">
                     <CheckButton
-                      done={hdone}
+                      done={todayChecked}
                       round
-                      onClick={() => toggleHabitToday(h.id)}
-                      label={`${hdone ? 'Batalkan' : 'Tandai'} ${h.name}`}
+                      onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
+                      label={`Catat ${h.name}`}
                     />
                     <span
                       className={`flex-1 min-w-0 text-sm truncate ${
-                        hdone
+                        todayChecked
                           ? 'line-through text-slate-400 dark:text-slate-500'
                           : 'text-deep-navy dark:text-slate-100'
                       }`}
@@ -240,6 +266,11 @@ export default function Dashboard() {
                       {h.icon ? `${h.icon} ` : ''}
                       {h.name}
                     </span>
+                    {progress && (
+                      <span className="text-xs font-medium text-slate-400 tabular-nums shrink-0 dark:text-slate-500">
+                        {progress}
+                      </span>
+                    )}
                     {streak > 0 && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-500 shrink-0">
                         <Flame size={13} />

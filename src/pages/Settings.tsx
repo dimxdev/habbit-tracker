@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Download, Upload, FileText, Trash2, MessageCircle, Sun, Moon } from 'lucide-react';
+import { Download, Upload, FileText, Trash2, MessageCircle, Sun, Moon, Quote, Plus, Pencil, Check, X } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import useTheme from '../hooks/useTheme';
 import type { AppData } from '../types';
@@ -12,11 +12,96 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [newMotivation, setNewMotivation] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const customMotivations = data.customMotivations ?? [];
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleToggleCustomMotivation = () => {
+    setData((prev) => ({ ...prev, useCustomMotivation: !prev.useCustomMotivation }));
+  };
+
+  const handleAddMotivation = () => {
+    const text = newMotivation.trim();
+    if (!text) return;
+    const list = data.customMotivations ?? [];
+    if (list.includes(text)) {
+      showToast('Kata motivasi itu sudah ada.', 'error');
+      return;
+    }
+    setData((prev) => ({
+      ...prev,
+      customMotivations: [...(prev.customMotivations ?? []), text],
+      // Otomatis pilih yang baru ditambahkan sebagai yang aktif
+      activeMotivation: text,
+    }));
+    setNewMotivation('');
+    showToast('Kata motivasi ditambahkan!');
+  };
+
+  const handleSelectMotivation = (text: string) => {
+    setData((prev) => ({ ...prev, activeMotivation: text }));
+  };
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditingText(customMotivations[index]);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditingText('');
+  };
+
+  const handleSaveEdit = (index: number) => {
+    const text = editingText.trim();
+    if (!text) return;
+    const list = data.customMotivations ?? [];
+    const old = list[index];
+    if (text === old) {
+      handleCancelEdit();
+      return;
+    }
+    if (list.includes(text)) {
+      showToast('Kata motivasi itu sudah ada.', 'error');
+      return;
+    }
+    setData((prev) => {
+      const next = [...(prev.customMotivations ?? [])];
+      next[index] = text;
+      return {
+        ...prev,
+        customMotivations: next,
+        // Jika kata ini sedang aktif, ikut diperbarui
+        activeMotivation: prev.activeMotivation === old ? text : prev.activeMotivation,
+      };
+    });
+    handleCancelEdit();
+    showToast('Kata motivasi diperbarui!');
+  };
+
+  const handleDeleteMotivation = (index: number) => {
+    setData((prev) => {
+      const list = prev.customMotivations ?? [];
+      const removed = list[index];
+      const next = list.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        customMotivations: next,
+        // Jika yang dihapus sedang aktif, pindah ke sisa pertama (atau kosong)
+        activeMotivation:
+          prev.activeMotivation === removed ? (next[0] ?? '') : prev.activeMotivation,
+      };
+    });
+    if (editingIndex === index) handleCancelEdit();
+    showToast('Kata motivasi dihapus.');
   };
 
   const handleExportJSON = () => {
@@ -107,6 +192,184 @@ export default function Settings() {
               </button>
             </div>
           </div>
+        </section>
+
+        {/* Custom Motivation */}
+        <section className="md:col-span-2 bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-4 dark:bg-night-soft dark:border-night-border">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="inline-flex items-center gap-2 text-deep-navy font-semibold text-base dark:text-slate-100">
+                <Quote size={18} className="text-ocean-blue dark:text-sky-tint" />
+                Kustom Motivasi
+              </h2>
+              <p className="text-slate-500 text-sm mt-0.5 dark:text-slate-400">
+                Aktifkan untuk memakai kata-kata motivasimu sendiri di Dashboard.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!data.useCustomMotivation}
+              aria-label="Aktifkan kustom motivasi"
+              onClick={handleToggleCustomMotivation}
+              className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
+                data.useCustomMotivation ? 'bg-ocean-blue' : 'bg-slate-300 dark:bg-night-border'
+              }`}
+            >
+              <span
+                className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                  data.useCustomMotivation ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {data.useCustomMotivation && (
+            <div className="space-y-3 border-t border-mist pt-4 dark:border-night-border">
+              {/* Dropdown pilih kata aktif */}
+              <div>
+                <label
+                  htmlFor="active-motivation"
+                  className="block text-deep-navy text-sm font-medium mb-1.5 dark:text-slate-100"
+                >
+                  Kata motivasi yang dipakai
+                </label>
+                {customMotivations.length > 0 ? (
+                  <select
+                    id="active-motivation"
+                    value={data.activeMotivation ?? ''}
+                    onChange={(e) => handleSelectMotivation(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-mist bg-white text-deep-navy text-sm focus:outline-none focus:border-ocean-blue dark:bg-night dark:border-night-border dark:text-slate-100"
+                  >
+                    {customMotivations.map((m, i) => (
+                      <option key={i} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-slate-400 text-sm dark:text-slate-500">
+                    Belum ada kata motivasi. Tambahkan di bawah ini.
+                  </p>
+                )}
+              </div>
+
+              {/* Daftar kata — bisa diedit & dihapus */}
+              {customMotivations.length > 0 && (
+                <div>
+                  <p className="text-deep-navy text-sm font-medium mb-1.5 dark:text-slate-100">
+                    Daftar kata motivasi
+                  </p>
+                  <ul className="space-y-2">
+                    {customMotivations.map((m, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center gap-2 rounded-xl border border-mist bg-white px-3 py-2 dark:border-night-border dark:bg-night"
+                      >
+                        {editingIndex === i ? (
+                          <>
+                            <input
+                              type="text"
+                              value={editingText}
+                              aria-label="Edit kata motivasi"
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSaveEdit(i);
+                                } else if (e.key === 'Escape') {
+                                  handleCancelEdit();
+                                }
+                              }}
+                              autoFocus
+                              className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-mist bg-white text-deep-navy text-sm focus:outline-none focus:border-ocean-blue dark:bg-night-soft dark:border-night-border dark:text-slate-100"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEdit(i)}
+                              aria-label="Simpan perubahan"
+                              className="shrink-0 p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors dark:text-green-400 dark:hover:bg-green-500/10"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              aria-label="Batalkan edit"
+                              className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:bg-mist transition-colors dark:text-slate-400 dark:hover:bg-night-border"
+                            >
+                              <X size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex-1 min-w-0 text-deep-navy text-sm wrap-break-word dark:text-slate-100">
+                              {m}
+                              {data.activeMotivation === m && (
+                                <span className="ml-2 text-xs font-medium text-ocean-blue dark:text-sky-tint">
+                                  • dipakai
+                                </span>
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(i)}
+                              aria-label={`Edit "${m}"`}
+                              className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:bg-mist hover:text-ocean-blue transition-colors dark:text-slate-400 dark:hover:bg-night-border dark:hover:text-sky-tint"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMotivation(i)}
+                              aria-label={`Hapus "${m}"`}
+                              className="shrink-0 p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors dark:text-red-400 dark:hover:bg-red-500/10"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Tambah kata baru */}
+              <div>
+                <label
+                  htmlFor="new-motivation"
+                  className="block text-deep-navy text-sm font-medium mb-1.5 dark:text-slate-100"
+                >
+                  Tambah kata motivasi baru
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="new-motivation"
+                    type="text"
+                    value={newMotivation}
+                    onChange={(e) => setNewMotivation(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddMotivation();
+                      }
+                    }}
+                    placeholder="Tulis kalimat motivasimu…"
+                    className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-mist bg-white text-deep-navy text-sm focus:outline-none focus:border-ocean-blue dark:bg-night dark:border-night-border dark:text-slate-100 dark:placeholder:text-slate-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddMotivation}
+                    className="shrink-0 inline-flex items-center gap-1.5 bg-ocean-blue text-white text-sm font-medium px-4 rounded-xl hover:bg-deep-navy transition-colors"
+                  >
+                    <Plus size={16} />
+                    Tambah
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Data Management */}

@@ -15,4 +15,7 @@ export const DEFAULT_DATA: AppData = {
   completed: {},
   habits: [],
   habitLogs: {},
+  useCustomMotivation: false,
+  customMotivations: [],
+  activeMotivation: '',
 };
