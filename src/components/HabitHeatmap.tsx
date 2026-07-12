@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
+import { Trophy } from 'lucide-react';
 import type { AppData, Habit } from '../types';
 import { getDateKey, parseDateKey, shiftDateKey, formatDateKeyLong } from '../utils/helpers';
-import { getHabitCount, perDayCap } from '../utils/habits';
+import { getHabitCount, perDayCap, getHabitPeriod, computeBestStreak } from '../utils/habits';
 
 const WEEKS = 18; // ~4 bulan terakhir
 const SHORT_MONTHS = [
@@ -64,15 +65,27 @@ export default function HabitHeatmap({
     return { columns: cols, doneCount: done };
   }, [data, habit, todayKey]);
 
+  const bestStreak = computeBestStreak(data, habit, todayKey);
+  const streakUnit = getHabitPeriod(habit) === 'week' ? 'minggu' : 'hari';
+
   return (
     <div className="mt-3 border-t border-mist pt-3 dark:border-night-border">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2">
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
           Riwayat {WEEKS} minggu terakhir
         </p>
         <p className="text-xs text-slate-400 dark:text-slate-500">
           {doneCount} hari tercatat
         </p>
+      </div>
+
+      {/* Rekor streak terpanjang */}
+      <div className="flex items-center gap-1.5 mb-3 text-xs">
+        <Trophy size={14} className="text-amber-500 shrink-0" />
+        <span className="text-slate-500 dark:text-slate-400">Streak terpanjang:</span>
+        <span className="font-semibold text-deep-navy dark:text-slate-100">
+          {bestStreak} {streakUnit}
+        </span>
       </div>
 
       <div className="overflow-x-auto pb-1">

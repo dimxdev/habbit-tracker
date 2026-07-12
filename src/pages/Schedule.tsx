@@ -138,7 +138,7 @@ export default function Schedule() {
 
       <div className="px-4 md:px-8 -mt-5 space-y-4">
         {/* Day Tabs */}
-        <div className="bg-white rounded-2xl border border-mist p-2 shadow-sm dark:bg-night-soft dark:border-night-border">
+        <div className="glass-card p-2 shadow-sm">
           <div className="flex gap-1.5 overflow-x-auto scrollbar-none md:grid md:grid-cols-7 md:gap-1">
             {DAY_KEYS.map((day) => (
               <button
@@ -187,14 +187,14 @@ export default function Schedule() {
 
         {/* Slot List */}
         {slots.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-mist p-8 md:p-12 text-center dark:bg-night-soft dark:border-night-border">
+          <div className="glass-card p-8 md:p-12 text-center">
             <p className="text-slate-400 text-sm dark:text-slate-500">Belum ada jadwal untuk hari ini.</p>
           </div>
         ) : (
           <div className="grid gap-2.5 sm:grid-cols-2">
             {slots.map((slot) => (
               <div key={slot.id} className="space-y-1.5">
-                <div className="bg-white border border-mist rounded-xl px-4 py-3 flex items-center justify-between gap-3 hover:border-sky-tint transition-colors dark:bg-night-soft dark:border-night-border dark:hover:border-sky-tint">
+                <div className="glass-card rounded-xl px-4 py-3 flex items-center justify-between gap-3 hover:border-sky-tint transition-colors dark:hover:border-sky-tint">
                   <div className="min-w-0">
                     <p className="text-ocean-blue text-sm font-medium whitespace-nowrap dark:text-sky-tint">
                       {slot.start} – {slot.end}
@@ -226,7 +226,7 @@ export default function Schedule() {
 
                 {/* Delete Confirm */}
                 {deleteConfirmId === slot.id && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2 dark:bg-red-500/10 dark:border-red-500/30">
+                  <div className="anim-fade-up bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2 dark:bg-red-500/10 dark:border-red-500/30">
                     <p className="text-red-600 text-sm dark:text-red-400">Hapus slot ini?</p>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -264,8 +264,8 @@ export default function Schedule() {
 
       {/* Clear Day Modal */}
       {showClearDayModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
+        <div className="anim-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+          <div className="anim-sheet bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
             <h3 className="text-deep-navy font-bold text-base dark:text-slate-100">
               Hapus Semua Jadwal {DAY_LABELS[selectedDay]}?
             </h3>
@@ -314,8 +314,8 @@ export default function Schedule() {
 
       {/* Conflict Confirmation Modal */}
       {conflictInfo && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
+        <div className="anim-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+          <div className="anim-sheet bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
             <div className="flex items-start gap-3">
               <span className="grid place-items-center w-10 h-10 rounded-xl bg-amber-100 text-amber-500 shrink-0 dark:bg-amber-500/15">
                 <AlertTriangle size={20} />
@@ -382,8 +382,8 @@ export default function Schedule() {
 /* ---------- Modal Shell ---------- */
 function ModalShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
-      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 pb-24 sm:pb-6 space-y-4 shadow-xl dark:bg-night-soft">
+    <div className="anim-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="anim-sheet bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 pb-24 sm:pb-6 space-y-4 shadow-xl dark:bg-night-soft">
         {children}
       </div>
     </div>

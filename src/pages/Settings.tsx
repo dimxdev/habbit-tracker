@@ -156,7 +156,7 @@ export default function Settings() {
 
       <div className="px-4 md:px-8 -mt-5 grid gap-4 md:grid-cols-2">
         {/* Appearance */}
-        <section className="md:col-span-2 bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-3 dark:bg-night-soft dark:border-night-border">
+        <section className="md:col-span-2 glass-card p-5 shadow-sm space-y-3">
           <h2 className="text-deep-navy font-semibold text-base dark:text-slate-100">Tampilan</h2>
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -195,7 +195,7 @@ export default function Settings() {
         </section>
 
         {/* Custom Motivation */}
-        <section className="md:col-span-2 bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-4 dark:bg-night-soft dark:border-night-border">
+        <section className="md:col-span-2 glass-card p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="inline-flex items-center gap-2 text-deep-navy font-semibold text-base dark:text-slate-100">
@@ -373,7 +373,7 @@ export default function Settings() {
         </section>
 
         {/* Data Management */}
-        <section className="md:col-span-2 bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-3 dark:bg-night-soft dark:border-night-border">
+        <section className="md:col-span-2 glass-card p-5 shadow-sm space-y-3">
           <h2 className="text-deep-navy font-semibold text-base dark:text-slate-100">Kelola Data</h2>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -403,7 +403,7 @@ export default function Settings() {
         </section>
 
         {/* Support Developer */}
-        <section className="bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-3 text-center flex flex-col dark:bg-night-soft dark:border-night-border">
+        <section className="glass-card p-5 shadow-sm space-y-3 text-center flex flex-col">
           <h2 className="text-deep-navy font-semibold text-base dark:text-slate-100">Support Developer ☕</h2>
           <p className="text-slate-500 text-sm dark:text-slate-400">
             Aplikasi ini gratis. Jika bermanfaat, kamu bisa support dengan scan QRIS di bawah ini.
@@ -426,7 +426,7 @@ export default function Settings() {
         </section>
 
         {/* Feedback */}
-        <section className="bg-white rounded-2xl border border-mist p-5 shadow-sm space-y-3 flex flex-col dark:bg-night-soft dark:border-night-border">
+        <section className="glass-card p-5 shadow-sm space-y-3 flex flex-col">
           <h2 className="text-deep-navy font-semibold text-base dark:text-slate-100">Feedback & Bug Report</h2>
           <p className="text-slate-500 text-sm dark:text-slate-400">
             Ada saran fitur atau menemukan bug? Hubungi pengembang langsung via WhatsApp.
@@ -450,8 +450,8 @@ export default function Settings() {
 
       {/* Delete Confirm Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
+        <div className="anim-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center px-4">
+          <div className="anim-sheet bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-xl dark:bg-night-soft">
             <h3 className="text-deep-navy font-bold text-base dark:text-slate-100">Hapus Semua Data?</h3>
             <p className="text-slate-500 text-sm dark:text-slate-400">
               Aksi ini akan menghapus seluruh jadwal yang tersimpan dan tidak bisa dibatalkan.
@@ -479,7 +479,7 @@ export default function Settings() {
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl text-white text-sm font-medium shadow-lg z-50 ${
+          className={`anim-toast fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl text-white text-sm font-medium shadow-lg z-50 ${
             toast.type === 'error' ? 'bg-red-500' : 'bg-deep-navy'
           }`}
         >

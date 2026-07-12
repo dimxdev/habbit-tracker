@@ -32,6 +32,19 @@ const PERIOD_OPTIONS: { value: 'day' | 'week'; label: string }[] = [
   { value: 'week', label: 'Per minggu' },
 ];
 
+// Ambil satu "karakter tampak" pertama (grapheme) — supaya emoji gabungan
+// seperti ✍️ atau 👨‍👩‍👧 tidak terpotong.
+const firstEmoji = (value: string): string => {
+  const t = value.trim();
+  if (!t) return '';
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const seg = new Intl.Segmenter('id', { granularity: 'grapheme' });
+    const first = seg.segment(t)[Symbol.iterator]().next();
+    if (!first.done && first.value) return first.value.segment;
+  }
+  return Array.from(t)[0] ?? '';
+};
+
 export default function Habit() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
   const [showModal, setShowModal] = useState(false);
@@ -74,7 +87,7 @@ export default function Habit() {
 
       <div className="px-4 md:px-8 -mt-5 space-y-3">
         {habits.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-mist p-8 md:p-12 flex flex-col items-center text-center gap-3 dark:bg-night-soft dark:border-night-border">
+          <div className="glass-card p-8 md:p-12 flex flex-col items-center text-center gap-3">
             <span className="text-4xl">🎯</span>
             <p className="text-slate-400 text-sm dark:text-slate-500">
               Belum ada habit. Tambah kebiasaan pertamamu!
@@ -91,6 +104,7 @@ export default function Habit() {
               onCycle={(key) => setData((prev) => cycleHabit(prev, key, habit))}
               onEdit={() => { setEditing(habit); setShowModal(true); }}
               onArchive={() => setData((prev) => archiveHabit(prev, habit.id))}
+              onDelete={() => setData((prev) => deleteHabit(prev, habit.id))}
             />
           ))
         )}
@@ -132,6 +146,7 @@ function HabitCard({
   onCycle,
   onEdit,
   onArchive,
+  onDelete,
 }: {
   data: AppData;
   habit: HabitType;
@@ -140,10 +155,15 @@ function HabitCard({
   onCycle: (dateKey: string) => void;
   onEdit: () => void;
   onArchive: () => void;
+  onDelete: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<'archive' | 'delete' | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const yesterdayKey = shiftDateKey(todayKey, -1);
+
+  // Sel yang barusan diketuk → hanya sel itu yang dapat animasi pop.
+  // `n` naik tiap ketukan supaya animasi replay walau sel sama diketuk lagi.
+  const [pop, setPop] = useState<{ key: string; n: number } | null>(null);
 
   const period = getHabitPeriod(habit);
   const target = getHabitTarget(habit);
@@ -166,7 +186,7 @@ function HabitCard({
       : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-mist p-4 md:p-5 shadow-sm dark:bg-night-soft dark:border-night-border">
+    <div className="glass-card p-4 md:p-5 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -194,10 +214,18 @@ function HabitCard({
           <button
             type="button"
             aria-label="Arsipkan habit"
-            onClick={() => setConfirming(true)}
+            onClick={() => setConfirming('archive')}
             className="p-1.5 rounded-lg text-slate-400 hover:text-ocean-blue hover:bg-mist transition-colors dark:hover:text-sky-tint dark:hover:bg-night-border"
           >
             <Archive size={15} />
+          </button>
+          <button
+            type="button"
+            aria-label="Hapus habit"
+            onClick={() => setConfirming('delete')}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors dark:hover:bg-red-500/10"
+          >
+            <Trash2 size={15} />
           </button>
         </div>
       </div>
@@ -233,6 +261,8 @@ function HabitCard({
           const isToday = key === todayKey;
           const editable = key === todayKey || key === yesterdayKey;
           const dayLabel = JS_DAY_SHORT[parseDateKey(key).getDay()];
+          // Pop hanya untuk sel yang barusan diketuk (bukan saat halaman dimuat)
+          const shouldPop = pop?.key === key && count > 0;
 
           const label = (
             <span
@@ -245,7 +275,11 @@ function HabitCard({
           );
           const circle = (
             <span
+              // key berubah tiap ketukan → animasi pop replay
+              key={shouldPop ? pop.n : 0}
               className={`w-7 h-7 rounded-full grid place-items-center border-2 text-xs font-semibold tabular-nums transition-colors ${
+                shouldPop ? 'anim-pop ' : ''
+              }${
                 complete
                   ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
                   : partial
@@ -263,7 +297,10 @@ function HabitCard({
             <button
               key={key}
               type="button"
-              onClick={() => onCycle(key)}
+              onClick={() => {
+                onCycle(key);
+                setPop((p) => ({ key, n: (p?.n ?? 0) + 1 }));
+              }}
               aria-label={`Catat ${habit.name} ${isToday ? 'hari ini' : 'kemarin'} (sekarang ${count}${cap > 1 ? ` dari ${cap}` : ''})`}
               className="flex flex-col items-center gap-1 py-1"
             >
@@ -298,18 +335,22 @@ function HabitCard({
         />
       </button>
 
-      {showHeatmap && <HabitHeatmap data={data} habit={habit} todayKey={todayKey} />}
+      {showHeatmap && (
+        <div className="anim-fade-up">
+          <HabitHeatmap data={data} habit={habit} todayKey={todayKey} />
+        </div>
+      )}
 
       {/* Archive confirm */}
-      {confirming && (
-        <div className="mt-3 bg-mist/60 border border-mist rounded-xl px-4 py-3 flex items-center justify-between gap-2 dark:bg-night-border/40 dark:border-night-border">
+      {confirming === 'archive' && (
+        <div className="anim-fade-up mt-3 bg-mist/60 border border-mist rounded-xl px-4 py-3 flex items-center justify-between gap-2 dark:bg-night-border/40 dark:border-night-border">
           <p className="text-deep-navy text-sm dark:text-slate-200">
             Arsipkan habit ini? Riwayat tetap disimpan dan bisa dipulihkan.
           </p>
           <div className="flex gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setConfirming(false)}
+              onClick={() => setConfirming(null)}
               className="text-slate-500 text-sm px-3 py-1 border border-slate-300 rounded-lg hover:bg-white transition-colors dark:text-slate-300 dark:border-slate-600 dark:hover:bg-night-border"
             >
               Batal
@@ -320,6 +361,31 @@ function HabitCard({
               className="text-white bg-ocean-blue text-sm px-3 py-1 rounded-lg hover:bg-deep-navy transition-colors"
             >
               Arsipkan
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {confirming === 'delete' && (
+        <div className="anim-fade-up mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-2 dark:bg-red-500/10 dark:border-red-500/30">
+          <p className="text-red-600 text-sm dark:text-red-400">
+            Hapus habit ini beserta seluruh riwayatnya? Tidak bisa dibatalkan.
+          </p>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setConfirming(null)}
+              className="text-slate-500 text-sm px-3 py-1 border border-slate-300 rounded-lg hover:bg-white transition-colors dark:text-slate-300 dark:border-slate-600 dark:hover:bg-night-border"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-white bg-red-500 text-sm px-3 py-1 rounded-lg hover:bg-red-600 transition-colors"
+            >
+              Hapus
             </button>
           </div>
         </div>
@@ -341,7 +407,7 @@ function ArchiveSection({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   return (
-    <div className="bg-white rounded-2xl border border-mist shadow-sm dark:bg-night-soft dark:border-night-border">
+    <div className="glass-card shadow-sm">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -359,7 +425,7 @@ function ArchiveSection({
       </button>
 
       {open && (
-        <ul className="border-t border-mist px-4 py-2 space-y-1 dark:border-night-border">
+        <ul className="anim-fade-up border-t border-mist px-4 py-2 space-y-1 dark:border-night-border">
           {archived.map((h) => (
             <li key={h.id} className="py-2">
               <div className="flex items-center gap-3">
@@ -393,7 +459,7 @@ function ArchiveSection({
               </div>
 
               {confirmDelete === h.id && (
-                <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2 dark:bg-red-500/10 dark:border-red-500/30">
+                <div className="anim-fade-up mt-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2 dark:bg-red-500/10 dark:border-red-500/30">
                   <p className="text-red-600 text-xs dark:text-red-400">
                     Hapus permanen beserta seluruh riwayatnya?
                   </p>
@@ -455,8 +521,8 @@ function HabitModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
-      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 pb-24 sm:pb-6 space-y-4 shadow-xl dark:bg-night-soft">
+    <div className="anim-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="anim-sheet bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 pb-24 sm:pb-6 space-y-4 shadow-xl dark:bg-night-soft">
         <h2 className="text-deep-navy text-lg font-bold dark:text-slate-100">
           {initial ? 'Edit Habit' : 'Tambah Habit'}
         </h2>
@@ -497,6 +563,30 @@ function HabitModal({
                   {e}
                 </button>
               ))}
+            </div>
+
+            {/* Emoji kustom — ketik/tempel apa saja */}
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="text"
+                value={icon}
+                onChange={(e) => setIcon(firstEmoji(e.target.value))}
+                placeholder="🙂"
+                aria-label="Ikon kustom (emoji)"
+                className="w-12 h-9 text-lg text-center rounded-lg border border-mist bg-white focus:outline-none focus:border-ocean-blue focus:ring-2 focus:ring-sky-tint/30 dark:border-night-border dark:bg-night"
+              />
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                atau ketik / tempel emoji sendiri
+              </span>
+              {icon && !EMOJI_CHOICES.includes(icon) && (
+                <button
+                  type="button"
+                  onClick={() => setIcon('')}
+                  className="ml-auto text-xs font-medium text-slate-400 hover:text-red-500 transition-colors dark:text-slate-500"
+                >
+                  Hapus
+                </button>
+              )}
             </div>
           </div>
 

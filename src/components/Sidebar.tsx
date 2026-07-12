@@ -11,7 +11,7 @@ const links = [
 
 export default function Sidebar() {
   return (
-    <aside className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 md:w-64 bg-white border-r border-mist z-40 transition-colors dark:bg-night-soft dark:border-night-border">
+    <aside className="hidden md:flex md:flex-col md:fixed md:inset-y-0 md:left-0 md:w-64 glass-nav border-r border-white/40 z-40 transition-colors dark:border-white/10">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-6 h-16 border-b border-mist dark:border-night-border">
         <span className="grid place-items-center w-9 h-9 rounded-xl bg-ocean-blue text-white">
@@ -28,10 +28,10 @@ export default function Sidebar() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ` +
+              `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95 ` +
               (isActive
-                ? 'bg-mist text-ocean-blue dark:bg-night-border dark:text-sky-tint'
-                : 'text-slate-500 hover:bg-cloud-white hover:text-deep-navy dark:text-slate-400 dark:hover:bg-night dark:hover:text-slate-100')
+                ? 'bg-white/50 text-ocean-blue shadow-sm dark:bg-white/10 dark:text-sky-tint'
+                : 'text-slate-500 hover:bg-white/40 hover:text-deep-navy dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100')
             }
           >
             {({ isActive }) => (

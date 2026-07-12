@@ -74,7 +74,7 @@ export default function Calendar() {
 
       <div className="px-4 md:px-8 -mt-5 space-y-4">
         {/* Calendar Card */}
-        <div className="bg-white rounded-2xl border border-mist p-4 md:p-5 shadow-sm dark:bg-night-soft dark:border-night-border">
+        <div className="glass-card p-4 md:p-5 shadow-sm">
           {/* Month nav */}
           <div className="flex items-center justify-between mb-4">
             <button
@@ -226,7 +226,7 @@ export default function Calendar() {
         </div>
 
         {/* Selected date detail */}
-        <div className="bg-white rounded-2xl border border-mist p-5 shadow-sm dark:bg-night-soft dark:border-night-border">
+        <div className="glass-card p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <CalendarDays size={18} className="text-ocean-blue shrink-0 dark:text-sky-tint" />
             <h3 className="text-deep-navy font-semibold text-sm md:text-base dark:text-slate-100">

@@ -95,7 +95,7 @@ export default function Dashboard() {
 
       <div className="px-4 md:px-8 -mt-5 space-y-6">
         {/* Motivation Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
+        <div className="glass-card p-5">
           <Quote size={22} className="text-sky-tint mb-2" />
           <p className="text-deep-navy text-sm md:text-base leading-relaxed italic dark:text-slate-100">
             {motivation}
@@ -104,7 +104,7 @@ export default function Dashboard() {
 
         {/* Progres Hari Ini */}
         {totalCount > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 flex items-center gap-5 dark:bg-night-soft dark:border-night-border">
+          <div className="glass-card p-5 flex items-center gap-5">
             <ProgressRing value={percent}>
               <span className="text-deep-navy font-bold text-lg tabular-nums dark:text-slate-100">
                 {percent}%
@@ -136,7 +136,7 @@ export default function Dashboard() {
           </div>
 
           {slots.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-mist p-8 md:p-12 flex flex-col items-center text-center gap-3 dark:bg-night-soft dark:border-night-border">
+            <div className="glass-card p-8 md:p-12 flex flex-col items-center text-center gap-3">
               <CalendarX2 size={40} className="text-slate-300 dark:text-slate-600" />
               <p className="text-slate-400 text-sm dark:text-slate-500">Belum ada jadwal untuk hari ini.</p>
               <Link
@@ -219,7 +219,7 @@ export default function Dashboard() {
 
         {/* Habit Hari Ini — centang cepat */}
         {habits.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
+          <div className="glass-card p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
                 <Target size={18} className="text-ocean-blue dark:text-sky-tint" />
@@ -241,20 +241,19 @@ export default function Dashboard() {
                 // "Tercentang" = pencatatan hari ini sudah cukup (harian: penuh target; mingguan: minimal sekali)
                 const todayChecked = todayCount >= cap;
                 const streak = computeStreak(data, h, todayDateKey);
-                // Keterangan progres untuk habit non-biasa
+                // Habit mingguan tampilkan progres minggu di samping;
+                // habit harian multi-target tampil sebagai angka di lingkaran.
                 const week = weeklyProgress(data, h, todayDateKey);
-                const progress = isWeekly
-                  ? `${week.done}/${week.target} mgg`
-                  : cap > 1
-                    ? `${todayCount}/${cap}`
-                    : null;
+                const progress = isWeekly ? `${week.done}/${week.target} mgg` : null;
                 return (
                   <li key={h.id} className="flex items-center gap-3">
                     <CheckButton
                       done={todayChecked}
                       round
+                      count={todayCount}
+                      cap={cap}
                       onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
-                      label={`Catat ${h.name}`}
+                      label={`Catat ${h.name}${cap > 1 ? ` (${todayCount}/${cap})` : ''}`}
                     />
                     <span
                       className={`flex-1 min-w-0 text-sm truncate ${
@@ -285,7 +284,7 @@ export default function Dashboard() {
         )}
 
         {/* Catatan Harian — jurnal/refleksi hari ini (paling bawah) */}
-        <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
+        <div className="glass-card p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
               <NotebookPen size={18} className="text-ocean-blue dark:text-sky-tint" />
@@ -318,24 +317,45 @@ function CheckButton({
   onClick,
   label,
   round = false,
+  count,
+  cap,
 }: {
   done: boolean;
   onClick: () => void;
   label: string;
   round?: boolean;
+  // Bila cap > 1 (mis. sholat 5x), lingkaran menampilkan angka hitungan
+  count?: number;
+  cap?: number;
 }) {
+  const showCount = cap != null && cap > 1;
+  const c = count ?? 0;
+  const complete = showCount ? c >= cap : done;
+  const partial = showCount && c > 0 && !complete;
+
+  // Pop dipicu dari klik (bukan saat halaman dimuat). Saat batal centang,
+  // isi lingkaran transparan sehingga animasinya tak terlihat — aman.
+  const [popKey, setPopKey] = useState(0);
+
   return (
     <button
       type="button"
       aria-label={label}
-      onClick={onClick}
-      className={`shrink-0 w-5 h-5 ${round ? 'rounded-full' : 'rounded-md'} border-2 grid place-items-center transition-colors ${
-        done
+      onClick={() => {
+        onClick();
+        setPopKey((k) => k + 1);
+      }}
+      className={`shrink-0 w-5 h-5 ${round ? 'rounded-full' : 'rounded-md'} border-2 grid place-items-center text-[10px] font-bold tabular-nums transition-colors ${
+        complete
           ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
-          : 'border-slate-300 text-transparent hover:border-ocean-blue dark:border-slate-600 dark:hover:border-sky-tint'
+          : partial
+            ? 'bg-ocean-blue/15 border-ocean-blue text-ocean-blue dark:bg-sky-tint/15 dark:border-sky-tint dark:text-sky-tint'
+            : 'border-slate-300 text-transparent hover:border-ocean-blue dark:border-slate-600 dark:hover:border-sky-tint'
       }`}
     >
-      <Check size={13} strokeWidth={3} />
+      <span key={popKey} className={`grid place-items-center ${popKey > 0 ? 'anim-pop' : ''}`}>
+        {showCount ? (complete ? cap : partial ? c : null) : <Check size={13} strokeWidth={3} />}
+      </span>
     </button>
   );
 }
@@ -414,7 +434,7 @@ function SlotCard({
   }
 
   return (
-    <div className="relative bg-white border border-mist rounded-xl overflow-hidden hover:border-sky-tint transition-colors dark:bg-night-soft dark:border-night-border dark:hover:border-sky-tint">
+    <div className="relative glass-card rounded-xl overflow-hidden hover:border-sky-tint transition-colors dark:hover:border-sky-tint">
       {hasNotes && !expanded && (
         <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-ocean-blue dark:bg-sky-tint" />
       )}

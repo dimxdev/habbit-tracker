@@ -31,7 +31,7 @@ export default function WeeklyRecap({
   const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-mist p-5 dark:bg-night-soft dark:border-night-border">
+    <div className="glass-card p-5">
       <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold mb-4 dark:text-slate-100">
         <BarChart3 size={18} className="text-ocean-blue dark:text-sky-tint" />
         Rekap Minggu Ini

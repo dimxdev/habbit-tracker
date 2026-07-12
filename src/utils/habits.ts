@@ -230,6 +230,40 @@ export const computeStreak = (data: AppData, habit: Habit, todayKey: string): nu
     ? weeklyStreak(data, habit, todayKey)
     : dailyStreak(data, habit, todayKey);
 
+// Streak terpanjang (rekor) sepanjang umur habit — hari atau minggu.
+export const computeBestStreak = (data: AppData, habit: Habit, todayKey: string): number => {
+  let best = 0;
+  let run = 0;
+
+  if (getHabitPeriod(habit) === 'week') {
+    const target = getHabitTarget(habit);
+    let mon = weekStartKey(habit.createdAt);
+    const lastMon = weekStartKey(todayKey);
+    while (mon <= lastMon) {
+      if (weeklyDoneDays(data, habit, mon, todayKey) >= target) {
+        run++;
+        if (run > best) best = run;
+      } else {
+        run = 0;
+      }
+      mon = shiftDateKey(mon, 7);
+    }
+    return best;
+  }
+
+  let cursor = habit.createdAt;
+  while (cursor <= todayKey) {
+    if (isDayComplete(data, cursor, habit)) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 0;
+    }
+    cursor = shiftDateKey(cursor, 1);
+  }
+  return best;
+};
+
 // Apakah suatu hari "dihitung selesai" untuk rekap:
 // - harian  -> target harian tercapai
 // - mingguan -> ada pencatatan hari itu (menyumbang ke target mingguan)

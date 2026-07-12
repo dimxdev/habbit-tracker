@@ -11,7 +11,7 @@ const tabs = [
 
 export default function BottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-mist z-50 dark:bg-night-soft/95 dark:border-night-border">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 glass-nav border-t border-white/40 z-50 dark:border-white/10">
       <div className="max-w-md mx-auto flex">
         {tabs.map(({ to, label, Icon }) => (
           <NavLink
@@ -19,9 +19,9 @@ export default function BottomNav() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ` +
+              `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-transform duration-200 active:scale-90 ` +
               (isActive
-                ? 'text-ocean-blue border-t-2 border-ocean-blue bg-mist dark:text-sky-tint dark:border-sky-tint dark:bg-night-border'
+                ? 'text-ocean-blue border-t-2 border-ocean-blue bg-white/40 dark:text-sky-tint dark:border-sky-tint dark:bg-white/10'
                 : 'text-slate-400 border-t-2 border-transparent dark:text-slate-500')
             }
           >

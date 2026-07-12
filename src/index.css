@@ -23,8 +23,130 @@
 @layer base {
   body {
     background-color: var(--color-cloud-white);
+    -webkit-tap-highlight-color: transparent;
   }
   .dark body {
     background-color: var(--color-night);
+  }
+
+  /* Latar ambient (blob warna lembut) — memberi sesuatu untuk "dibiaskan"
+     oleh permukaan kaca. Fixed & di belakang seluruh konten. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(58% 48% at 12% -4%, rgba(91, 164, 207, 0.28), transparent 70%),
+      radial-gradient(52% 44% at 104% 16%, rgba(27, 108, 168, 0.20), transparent 70%),
+      radial-gradient(70% 60% at 50% 108%, rgba(214, 230, 242, 0.55), transparent 72%),
+      var(--color-cloud-white);
+  }
+  .dark body::before {
+    background:
+      radial-gradient(58% 48% at 12% -4%, rgba(27, 108, 168, 0.45), transparent 70%),
+      radial-gradient(52% 44% at 104% 16%, rgba(91, 164, 207, 0.28), transparent 70%),
+      radial-gradient(70% 60% at 50% 108%, rgba(21, 37, 59, 0.65), transparent 72%),
+      var(--color-night);
+  }
+}
+
+@layer components {
+  /* Kartu kaca: tembus pandang + blur + kilau tepi (specular highlight) */
+  .glass-card {
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.42);
+    -webkit-backdrop-filter: blur(18px) saturate(185%);
+    backdrop-filter: blur(18px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+      0 4px 24px -8px rgba(10, 37, 64, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+  .dark .glass-card {
+    /* nada sedikit lebih terang dari latar gelap → terbaca sebagai panel kaca */
+    background: rgba(40, 60, 88, 0.42);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 10px 32px -12px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  /* Nav/panel kaca: blur lebih kuat & sedikit lebih pekat demi keterbacaan */
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+  }
+  .dark .glass-nav {
+    background: rgba(11, 22, 34, 0.6);
+  }
+}
+
+/* ── Micro-animations ─────────────────────────────────────────────────
+   Semua dibungkus prefers-reduced-motion supaya menghormati preferensi
+   aksesibilitas. Easing "spring" (overshoot) dipakai untuk kesan hidup. */
+@media (prefers-reduced-motion: no-preference) {
+  /* Konten halaman masuk: naik lembut + fade */
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .anim-page { animation: page-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  /* Elemen kecil muncul (confirm box, heatmap, dsb.) */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .anim-fade-up { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  /* Pop saat centang/angka bertambah — mengembang lalu mantul balik */
+  @keyframes pop {
+    0%   { transform: scale(0.6); }
+    55%  { transform: scale(1.15); }
+    80%  { transform: scale(0.97); }
+    100% { transform: scale(1); }
+  }
+  .anim-pop { animation: pop 0.5s cubic-bezier(0.34, 1.3, 0.64, 1); }
+
+  /* Overlay modal: fade */
+  @keyframes overlay-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .anim-overlay { animation: overlay-in 0.35s ease-out both; }
+
+  /* Sheet/modal: naik + sedikit membesar, spring halus */
+  @keyframes sheet-in {
+    from { opacity: 0; transform: translateY(36px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .anim-sheet { animation: sheet-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  /* Toast: muncul dari bawah dengan pantulan kecil */
+  @keyframes toast-in {
+    0%   { opacity: 0; transform: translate(-50%, 20px) scale(0.94); }
+    65%  { opacity: 1; transform: translate(-50%, -4px) scale(1.015); }
+    100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  }
+  .anim-toast { animation: toast-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+
+/* Feedback sentuh yang lembut (spring). Dinonaktifkan bila user memilih
+   mengurangi gerakan. */
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled),
+  [role="button"] {
+    transition:
+      transform 0.28s cubic-bezier(0.34, 1.4, 0.64, 1),
+      background-color 0.3s ease,
+      color 0.3s ease,
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  button:not(:disabled):active,
+  [role="button"]:active {
+    transform: scale(0.95);
   }
 }
