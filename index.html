@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" class="splash-lock">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -8,10 +8,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Habbit Tracker</title>
     <meta name="theme-color" content="#0A2540" />
+    <meta
+      name="description"
+      content="Pelacak kebiasaan & jadwal harian — bangun rutinitas, jaga streak-nya, dan atur agendamu. Gratis, bisa dipasang di HP."
+    />
+
+    <!-- Open Graph (WhatsApp, Facebook, Telegram, dll.) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Habbit Tracker" />
+    <meta property="og:title" content="Habbit Tracker — Pelacak Kebiasaan & Jadwal Harian" />
+    <meta
+      property="og:description"
+      content="Bangun kebiasaan, jaga streak-nya, dan atur agenda harianmu. Gratis, bisa dipasang di HP."
+    />
+    <meta property="og:url" content="https://habbit-trackerrr.vercel.app/" />
+    <meta property="og:image" content="https://habbit-trackerrr.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Logo Habbit Tracker" />
+    <meta property="og:locale" content="id_ID" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Habbit Tracker — Pelacak Kebiasaan & Jadwal Harian" />
+    <meta
+      name="twitter:description"
+      content="Bangun kebiasaan, jaga streak-nya, dan atur agenda harianmu. Gratis, bisa dipasang di HP."
+    />
+    <meta name="twitter:image" content="https://habbit-trackerrr.vercel.app/og-image.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
+      /* Kunci scroll & overscroll (bounce/pull) selama splash tampil —
+         mencegah logo ikut ke-geser di HP, termasuk Samsung Internet. */
+      html.splash-lock,
+      html.splash-lock body {
+        overflow: hidden;
+        height: 100%;
+        overscroll-behavior: none;
+        touch-action: none;
+      }
+
       /* Splash/loading screen — tampil instan sebelum React siap */
       #splash {
         position: fixed;
@@ -23,6 +61,8 @@
         justify-content: center;
         gap: 20px;
         background: #0a2540;
+        overscroll-behavior: none;
+        touch-action: none;
         transition: opacity 0.4s ease;
       }
       #splash.hide {
