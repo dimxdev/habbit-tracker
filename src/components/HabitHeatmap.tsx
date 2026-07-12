@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Trophy } from 'lucide-react';
 import type { AppData, Habit } from '../types';
 import { getDateKey, parseDateKey, shiftDateKey, formatDateKeyLong } from '../utils/helpers';
-import { getHabitCount, perDayCap, getHabitPeriod, computeBestStreak } from '../utils/habits';
+import { getHabitCount, perDayCap, getHabitPeriod, computeBestStreak, isHabitExcused } from '../utils/habits';
 
 const WEEKS = 18; // ~4 bulan terakhir
 const SHORT_MONTHS = [
@@ -12,7 +12,7 @@ const SHORT_MONTHS = [
 // Label baris (Senin di atas) — hanya sebagian ditampilkan biar rapi
 const ROW_LABELS = ['Sen', '', 'Rab', '', 'Jum', '', ''];
 
-type CellState = 'future' | 'untracked' | 'empty' | 'partial' | 'done';
+type CellState = 'future' | 'untracked' | 'empty' | 'partial' | 'done' | 'excused';
 
 export default function HabitHeatmap({
   data,
@@ -43,6 +43,8 @@ export default function HabitHeatmap({
           state = 'future';
         } else if (key < habit.createdAt) {
           state = 'untracked';
+        } else if (isHabitExcused(data, key, habit.id)) {
+          state = 'excused';
         } else {
           const count = getHabitCount(data, key, habit.id);
           if (count >= cap) {
@@ -121,11 +123,13 @@ export default function HabitHeatmap({
       </div>
 
       {/* Legenda */}
-      <div className="flex items-center gap-1.5 mt-2 justify-end">
+      <div className="flex items-center gap-1.5 mt-2 justify-end flex-wrap">
         <span className="text-[10px] text-slate-400 dark:text-slate-500">Kosong</span>
         <span className="w-3 h-3 rounded-[3px] bg-mist dark:bg-night-border" />
         <span className="w-3 h-3 rounded-[3px] bg-ocean-blue dark:bg-sky-tint" />
         <span className="text-[10px] text-slate-400 dark:text-slate-500">Selesai</span>
+        <span className="w-3 h-3 rounded-[3px] bg-amber-400 dark:bg-amber-500 ml-1" />
+        <span className="text-[10px] text-slate-400 dark:text-slate-500">Sakit</span>
       </div>
     </div>
   );
@@ -150,11 +154,14 @@ function Cell({
       ? 'bg-ocean-blue dark:bg-sky-tint'
       : state === 'partial'
         ? 'bg-ocean-blue/40 dark:bg-sky-tint/40'
-        : state === 'untracked'
-          ? 'bg-mist/40 dark:bg-night-border/40'
-          : 'bg-mist dark:bg-night-border';
+        : state === 'excused'
+          ? 'bg-amber-400 dark:bg-amber-500'
+          : state === 'untracked'
+            ? 'bg-mist/40 dark:bg-night-border/40'
+            : 'bg-mist dark:bg-night-border';
   const ring = isToday ? ' ring-1 ring-ocean-blue ring-offset-1 ring-offset-white dark:ring-sky-tint dark:ring-offset-night-soft' : '';
-  const status = state === 'done' ? 'selesai' : state === 'partial' ? 'sebagian' : 'kosong';
+  const status =
+    state === 'done' ? 'selesai' : state === 'partial' ? 'sebagian' : state === 'excused' ? 'sakit/berhalangan' : 'kosong';
   const title =
     state === 'untracked'
       ? `${formatDateKeyLong(dateKey)} — belum dilacak`

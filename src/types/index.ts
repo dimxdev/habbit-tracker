@@ -61,6 +61,9 @@ export interface AppData {
   habitLogs?: Record<string, string[]>;
   // Jumlah pencatatan habit per tanggal ('YYYY-MM-DD' -> habitId -> berapa kali)
   habitCounts?: Record<string, Record<string, number>>;
+  // Id habit yang ditandai sakit/berhalangan per tanggal ('YYYY-MM-DD' -> [habitId]).
+  // Streak tidak putus pada hari ini, tapi juga tidak bertambah.
+  habitExcused?: Record<string, string[]>;
   // Aktifkan kata-kata motivasi kustom (menggantikan kutipan bawaan)
   useCustomMotivation?: boolean;
   // Kumpulan kata-kata motivasi kustom yang pernah ditambahkan (tidak dihapus)

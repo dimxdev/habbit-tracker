@@ -58,6 +58,41 @@ export const activeHabits = (data: AppData): Habit[] =>
 export const archivedHabits = (data: AppData): Habit[] =>
   (data.habits ?? []).filter((h) => !!h.archivedAt);
 
+// Apakah habit sudah "beres" untuk hari ini — target harian tercapai ATAU
+// ditandai sakit/berhalangan. Keduanya sama-sama tidak perlu dikerjakan lagi
+// hari ini, jadi diturunkan ke bawah daftar.
+export const isSettledToday = (data: AppData, habit: Habit, todayKey: string): boolean =>
+  getHabitCount(data, todayKey, habit.id) >= perDayCap(habit) ||
+  isHabitExcused(data, todayKey, habit.id);
+
+// Urutkan habit: yang belum beres hari ini tetap di atas, yang sudah beres
+// (selesai atau sakit) turun ke bawah. Urutan relatif dalam masing-masing
+// kelompok mengikuti urutan asli (Array.sort stabil) — yaitu urutan kustom
+// hasil drag & drop (lihat reorderActiveHabits).
+export const sortByTodayCompletion = (
+  data: AppData,
+  habits: Habit[],
+  todayKey: string
+): Habit[] =>
+  [...habits].sort((a, b) => {
+    const aDone = isSettledToday(data, a, todayKey) ? 1 : 0;
+    const bDone = isSettledToday(data, b, todayKey) ? 1 : 0;
+    return aDone - bDone;
+  });
+
+// Terapkan urutan kustom baru (hasil drag & drop) untuk habit aktif.
+// Habit lain (arsip) tetap ada, ditaruh setelah yang aktif — posisinya di
+// antara arsip tidak berpengaruh karena selalu difilter ulang.
+export const reorderActiveHabits = (data: AppData, orderedActiveIds: string[]): AppData => {
+  const all = data.habits ?? [];
+  const byId = new Map(all.map((h) => [h.id, h]));
+  const reorderedActive = orderedActiveIds
+    .map((id) => byId.get(id))
+    .filter((h): h is Habit => !!h);
+  const rest = all.filter((h) => !orderedActiveIds.includes(h.id));
+  return { ...data, habits: [...reorderedActive, ...rest] };
+};
+
 // Sembunyikan habit tanpa menghapus riwayat pencatatannya
 export const archiveHabit = (data: AppData, id: string): AppData => ({
   ...data,
@@ -134,22 +169,53 @@ const setHabitCount = (
 };
 
 // Ketuk untuk menambah +1; kembali ke 0 bila sudah mencapai batas harian.
+// Ketukan langsung berarti ada usaha nyata hari itu — batalkan status
+// sakit/berhalangan yang mungkin sedang aktif untuk tanggal ini.
 export const cycleHabit = (data: AppData, dateKey: string, habit: Habit): AppData => {
   const cap = perDayCap(habit);
   const cur = getHabitCount(data, dateKey, habit.id);
   const next = cur >= cap ? 0 : cur + 1;
-  return setHabitCount(data, dateKey, habit.id, next);
+  return setHabitCount(clearHabitExcused(data, dateKey, habit.id), dateKey, habit.id, next);
 };
 
 // Toggle biner 0/1 (masih dipakai bila hanya perlu tandai/hapus)
 export const toggleHabit = (data: AppData, dateKey: string, habitId: string): AppData => {
   const cur = getHabitCount(data, dateKey, habitId);
-  return setHabitCount(data, dateKey, habitId, cur > 0 ? 0 : 1);
+  return setHabitCount(clearHabitExcused(data, dateKey, habitId), dateKey, habitId, cur > 0 ? 0 : 1);
 };
 
 // Apakah ada pencatatan sama sekali di hari itu
 export const isHabitDone = (data: AppData, dateKey: string, habitId: string): boolean =>
   getHabitCount(data, dateKey, habitId) > 0;
+
+// ── Sakit / berhalangan (streak freeze) ─────────────────────────────
+// Ditandai saat berhalangan menjalani habit (sakit, dsb). Hari itu tidak
+// menambah streak, tapi juga tidak memutusnya — "apinya tetap menyala".
+export const isHabitExcused = (data: AppData, dateKey: string, habitId: string): boolean =>
+  (data.habitExcused?.[dateKey] ?? []).includes(habitId);
+
+const clearHabitExcused = (data: AppData, dateKey: string, habitId: string): AppData => {
+  if (!data.habitExcused?.[dateKey]?.includes(habitId)) return data;
+  const list = data.habitExcused[dateKey].filter((x) => x !== habitId);
+  const habitExcused = { ...data.habitExcused };
+  if (list.length > 0) habitExcused[dateKey] = list;
+  else delete habitExcused[dateKey];
+  return { ...data, habitExcused };
+};
+
+// Tandai/batalkan sakit-berhalangan. Menandai sakit mengosongkan pencatatan
+// hari itu (bukan dianggap selesai) — dua status ini saling meniadakan.
+export const toggleHabitExcused = (data: AppData, dateKey: string, habitId: string): AppData => {
+  if (isHabitExcused(data, dateKey, habitId)) {
+    return clearHabitExcused(data, dateKey, habitId);
+  }
+  const cleared = setHabitCount(data, dateKey, habitId, 0);
+  const list = cleared.habitExcused?.[dateKey] ?? [];
+  return {
+    ...cleared,
+    habitExcused: { ...(cleared.habitExcused ?? {}), [dateKey]: [...list, habitId] },
+  };
+};
 
 // Apakah hari itu memenuhi target harian (mis. sholat sudah 5/5)
 export const isDayComplete = (data: AppData, dateKey: string, habit: Habit): boolean =>
@@ -197,14 +263,21 @@ export const isPeriodComplete = (data: AppData, habit: Habit, todayKey: string):
     ? weeklyDoneDays(data, habit, todayKey, todayKey) >= getHabitTarget(habit)
     : isDayComplete(data, todayKey, habit);
 
+// Hari yang tidak memutus streak: target tercapai ATAU ditandai sakit/
+// berhalangan (freeze — tidak menambah, tidak memutus).
+const keepsStreakAlive = (data: AppData, habit: Habit, dateKey: string): boolean =>
+  isDayComplete(data, dateKey, habit) || isHabitExcused(data, dateKey, habit.id);
+
 // ── Streak ───────────────────────────────────────────────────────────
 // Streak harian = jumlah hari berturut-turut target tercapai sampai hari ini.
 // Bila hari ini belum tercapai, dihitung mundur dari kemarin (biar tidak hangus).
+// Hari yang ditandai sakit dilompati (tidak menambah angka) tapi tetap
+// menyambungkan streak sebelum & sesudahnya.
 const dailyStreak = (data: AppData, habit: Habit, todayKey: string): number => {
   let streak = 0;
-  let cursor = isDayComplete(data, todayKey, habit) ? todayKey : shiftDateKey(todayKey, -1);
-  while (isDayComplete(data, cursor, habit)) {
-    streak++;
+  let cursor = keepsStreakAlive(data, habit, todayKey) ? todayKey : shiftDateKey(todayKey, -1);
+  while (keepsStreakAlive(data, habit, cursor)) {
+    if (isDayComplete(data, cursor, habit)) streak++;
     cursor = shiftDateKey(cursor, -1);
   }
   return streak;
@@ -256,9 +329,10 @@ export const computeBestStreak = (data: AppData, habit: Habit, todayKey: string)
     if (isDayComplete(data, cursor, habit)) {
       run++;
       if (run > best) best = run;
-    } else {
+    } else if (!isHabitExcused(data, cursor, habit.id)) {
       run = 0;
     }
+    // sakit/berhalangan: pertahankan run saat ini, tidak menambah/memutus
     cursor = shiftDateKey(cursor, 1);
   }
   return best;
@@ -291,12 +365,18 @@ export const weeklyScore = (data: AppData, habit: Habit, todayKey: string): numb
 
 // Konsistensi (%) hari-hari yang memenuhi target dalam jendela hingga 30 hari
 // terakhir, dibatasi umur habit supaya yang baru tidak otomatis rendah.
+// Hari yang ditandai sakit dikecualikan dari penyebut (tidak menghukum,
+// tidak menguntungkan).
 export const computeConsistency = (data: AppData, habit: Habit, todayKey: string): number => {
   const age = daysBetweenKeys(habit.createdAt, todayKey) + 1;
   const windowDays = Math.min(30, Math.max(1, age));
   let done = 0;
+  let counted = 0;
   for (let i = 0; i < windowDays; i++) {
-    if (isDayComplete(data, shiftDateKey(todayKey, -i), habit)) done++;
+    const key = shiftDateKey(todayKey, -i);
+    if (isHabitExcused(data, key, habit.id)) continue;
+    counted++;
+    if (isDayComplete(data, key, habit)) done++;
   }
-  return Math.round((done / windowDays) * 100);
+  return counted > 0 ? Math.round((done / counted) * 100) : 100;
 };

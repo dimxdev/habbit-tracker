@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight, Check, Target, Flame } from 'lucide-react';
+import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight, ChevronDown, Check, Target, Flame, Thermometer } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import type { AppData, TimeSlot, DailyNote } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
@@ -24,6 +24,8 @@ import {
   perDayCap,
   weeklyProgress,
   activeHabits,
+  sortByTodayCompletion,
+  isHabitExcused,
 } from '../utils/habits';
 import DailyNotesEditor from '../components/DailyNotesEditor';
 import ProgressRing from '../components/ProgressRing';
@@ -77,8 +79,10 @@ export default function Dashboard() {
   const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
   const toggleItem = (id: string) => setData((prev) => toggleDone(prev, todayDateKey, id));
 
-  // Habit (hanya yang aktif; yang diarsipkan disembunyikan)
-  const habits = activeHabits(data);
+  // Habit (hanya yang aktif; yang diarsipkan disembunyikan).
+  // Urutan dasar mengikuti urutan kustom hasil drag & drop di menu Habit;
+  // yang sudah tercatat penuh hari ini turun ke bawah.
+  const habits = sortByTodayCompletion(data, activeHabits(data), todayDateKey);
   const habitDoneCount = habits.filter((h) => isPeriodComplete(data, h, todayDateKey)).length;
 
   return (
@@ -240,42 +244,66 @@ export default function Dashboard() {
                 const todayCount = getHabitCount(data, todayDateKey, h.id);
                 // "Tercentang" = pencatatan hari ini sudah cukup (harian: penuh target; mingguan: minimal sekali)
                 const todayChecked = todayCount >= cap;
+                const excused = isHabitExcused(data, todayDateKey, h.id);
                 const streak = computeStreak(data, h, todayDateKey);
-                // Habit mingguan tampilkan progres minggu di samping;
-                // habit harian multi-target tampil sebagai angka di lingkaran.
+                // Progres di samping nama: mingguan -> hari tercatat/target minggu;
+                // harian multi-target -> hitungan hari ini/target (selain di lingkaran).
                 const week = weeklyProgress(data, h, todayDateKey);
-                const progress = isWeekly ? `${week.done}/${week.target} mgg` : null;
+                const progress = isWeekly
+                  ? `${week.done}/${week.target} mgg`
+                  : cap > 1
+                    ? `${todayCount}/${cap}`
+                    : null;
+                const cycleLabel = `Catat ${h.name}${cap > 1 ? ` (${todayCount}/${cap})` : ''}`;
                 return (
-                  <li key={h.id} className="flex items-center gap-3">
+                  <li key={`${h.id}-${todayChecked}`} className="anim-fade-up flex items-center gap-3">
                     <CheckButton
                       done={todayChecked}
+                      excused={excused}
                       round
                       count={todayCount}
                       cap={cap}
                       onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
-                      label={`Catat ${h.name}${cap > 1 ? ` (${todayCount}/${cap})` : ''}`}
+                      label={cycleLabel}
                     />
-                    <span
-                      className={`flex-1 min-w-0 text-sm truncate ${
-                        todayChecked
-                          ? 'line-through text-slate-400 dark:text-slate-500'
-                          : 'text-deep-navy dark:text-slate-100'
-                      }`}
+                    {/* Klik nama/progres/streak juga mencatat habit — bukan cuma lingkaran */}
+                    <button
+                      type="button"
+                      onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
+                      aria-label={cycleLabel}
+                      className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left py-1 -my-1"
                     >
-                      {h.icon ? `${h.icon} ` : ''}
-                      {h.name}
-                    </span>
-                    {progress && (
-                      <span className="text-xs font-medium text-slate-400 tabular-nums shrink-0 dark:text-slate-500">
-                        {progress}
+                      <span
+                        className={`min-w-0 truncate text-sm ${
+                          todayChecked
+                            ? 'line-through text-slate-400 dark:text-slate-500'
+                            : 'text-deep-navy dark:text-slate-100'
+                        }`}
+                      >
+                        {h.icon ? `${h.icon} ` : ''}
+                        {h.name}
                       </span>
-                    )}
-                    {streak > 0 && (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-500 shrink-0">
-                        <Flame size={13} />
-                        {streak}
+                      <span className="flex items-center gap-2 shrink-0">
+                        {excused ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                            <Thermometer size={12} />
+                            Sakit
+                          </span>
+                        ) : (
+                          progress && (
+                            <span className="text-xs font-medium text-slate-400 tabular-nums dark:text-slate-500">
+                              {progress}
+                            </span>
+                          )
+                        )}
+                        {streak > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-500">
+                            <Flame size={13} />
+                            {streak}
+                          </span>
+                        )}
                       </span>
-                    )}
+                    </button>
                   </li>
                 );
               })}
@@ -319,6 +347,7 @@ function CheckButton({
   round = false,
   count,
   cap,
+  excused = false,
 }: {
   done: boolean;
   onClick: () => void;
@@ -327,6 +356,8 @@ function CheckButton({
   // Bila cap > 1 (mis. sholat 5x), lingkaran menampilkan angka hitungan
   count?: number;
   cap?: number;
+  // Ditandai sakit/berhalangan — beda warna, tidak dianggap selesai
+  excused?: boolean;
 }) {
   const showCount = cap != null && cap > 1;
   const c = count ?? 0;
@@ -346,15 +377,23 @@ function CheckButton({
         setPopKey((k) => k + 1);
       }}
       className={`shrink-0 w-5 h-5 ${round ? 'rounded-full' : 'rounded-md'} border-2 grid place-items-center text-[10px] font-bold tabular-nums transition-colors ${
-        complete
-          ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
-          : partial
-            ? 'bg-ocean-blue/15 border-ocean-blue text-ocean-blue dark:bg-sky-tint/15 dark:border-sky-tint dark:text-sky-tint'
-            : 'border-slate-300 text-transparent hover:border-ocean-blue dark:border-slate-600 dark:hover:border-sky-tint'
+        excused
+          ? 'bg-amber-400 border-amber-400 text-white dark:bg-amber-500 dark:border-amber-500'
+          : complete
+            ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
+            : partial
+              ? 'bg-ocean-blue/15 border-ocean-blue text-ocean-blue dark:bg-sky-tint/15 dark:border-sky-tint dark:text-sky-tint'
+              : 'border-slate-300 text-transparent hover:border-ocean-blue dark:border-slate-600 dark:hover:border-sky-tint'
       }`}
     >
       <span key={popKey} className={`grid place-items-center ${popKey > 0 ? 'anim-pop' : ''}`}>
-        {showCount ? (complete ? cap : partial ? c : null) : <Check size={13} strokeWidth={3} />}
+        {excused ? (
+          <Thermometer size={11} strokeWidth={2.5} />
+        ) : showCount ? (
+          complete ? cap : partial ? c : null
+        ) : (
+          <Check size={13} strokeWidth={3} />
+        )}
       </span>
     </button>
   );
@@ -375,17 +414,30 @@ function SlotCard({
   const hasNotes = !!slot.notes;
   const checkLabel = `${done ? 'Batalkan' : 'Tandai selesai'} ${slot.activity || 'aktivitas'}`;
 
+  // Tombol kecil terpisah untuk buka/tutup catatan — supaya tidak tabrakan
+  // dengan tombol besar "tandai selesai" yang sekarang menutupi seluruh baris.
+  const notesToggle = hasNotes ? (
+    <button
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      aria-label={expanded ? 'Sembunyikan catatan' : 'Lihat catatan'}
+      aria-expanded={expanded ? 'true' : 'false'}
+      className="shrink-0 p-1 -m-1 rounded-lg text-slate-400 hover:text-ocean-blue transition-colors dark:hover:text-sky-tint"
+    >
+      <ChevronDown size={15} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+  ) : null;
+
   if (status === 'past') {
     return (
-      <div className="relative bg-slate-100 border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-800/60 dark:border-slate-700">
-        {hasNotes && !expanded && (
-          <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
-        )}
+      <div className="bg-slate-100 border border-slate-200 rounded-xl overflow-hidden dark:bg-slate-800/60 dark:border-slate-700">
         <div className="px-4 py-3 flex items-center gap-3">
           <CheckButton done={done} onClick={onToggle} label={checkLabel} />
-          <div
-            className={`flex-1 flex items-center justify-between gap-3 min-w-0 ${hasNotes ? 'cursor-pointer' : ''}`}
-            onClick={() => hasNotes && setExpanded((v) => !v)}
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={checkLabel}
+            className="flex-1 flex items-center justify-between gap-3 min-w-0 text-left"
           >
             <span className="text-slate-400 text-sm font-medium whitespace-nowrap dark:text-slate-500">
               {slot.start} – {slot.end}
@@ -393,7 +445,8 @@ function SlotCard({
             <span className={`text-slate-400 text-sm truncate dark:text-slate-500 ${done ? 'line-through' : ''}`}>
               {slot.activity || '—'}
             </span>
-          </div>
+          </button>
+          {notesToggle}
         </div>
         {expanded && hasNotes && (
           <div className="px-4 pb-3 text-slate-400 text-xs dark:text-slate-500">
@@ -418,13 +471,15 @@ function SlotCard({
         </div>
         <div className="flex items-center gap-2.5">
           <CheckButton done={done} onClick={onToggle} label={checkLabel} />
-          <p
-            className={`flex-1 min-w-0 font-semibold text-base ${
-              done ? 'line-through text-slate-400 dark:text-slate-500' : 'text-deep-navy dark:text-slate-100'
-            }`}
-          >
-            {slot.activity || '—'}
-          </p>
+          <button type="button" onClick={onToggle} aria-label={checkLabel} className="flex-1 min-w-0 text-left">
+            <p
+              className={`font-semibold text-base ${
+                done ? 'line-through text-slate-400 dark:text-slate-500' : 'text-deep-navy dark:text-slate-100'
+              }`}
+            >
+              {slot.activity || '—'}
+            </p>
+          </button>
         </div>
         {hasNotes && (
           <p className="text-ocean-blue/70 text-xs mt-1.5 dark:text-sky-tint/60">{slot.notes}</p>
@@ -434,15 +489,14 @@ function SlotCard({
   }
 
   return (
-    <div className="relative glass-card rounded-xl overflow-hidden hover:border-sky-tint transition-colors dark:hover:border-sky-tint">
-      {hasNotes && !expanded && (
-        <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-ocean-blue dark:bg-sky-tint" />
-      )}
+    <div className="glass-card rounded-xl overflow-hidden hover:border-sky-tint transition-colors dark:hover:border-sky-tint">
       <div className="px-4 py-3 flex items-center gap-3">
         <CheckButton done={done} onClick={onToggle} label={checkLabel} />
-        <div
-          className={`flex-1 flex items-center justify-between gap-3 min-w-0 ${hasNotes ? 'cursor-pointer' : ''}`}
-          onClick={() => hasNotes && setExpanded((v) => !v)}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={checkLabel}
+          className="flex-1 flex items-center justify-between gap-3 min-w-0 text-left"
         >
           <span className="text-ocean-blue text-sm font-medium whitespace-nowrap dark:text-sky-tint">
             {slot.start} – {slot.end}
@@ -450,7 +504,8 @@ function SlotCard({
           <span className={`text-deep-navy text-sm truncate dark:text-slate-100 ${done ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
             {slot.activity || '—'}
           </span>
-        </div>
+        </button>
+        {notesToggle}
       </div>
       {expanded && hasNotes && (
         <div className="px-4 pb-3 text-slate-500 text-xs dark:text-slate-400">

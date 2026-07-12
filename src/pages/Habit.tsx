@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2, Check, Flame, CalendarDays, ChevronDown, Minus, Archive, RotateCcw } from 'lucide-react';
+import { useState, useRef, useLayoutEffect } from 'react';
+import { Plus, Pencil, Trash2, Check, Flame, CalendarDays, ChevronDown, Minus, Archive, RotateCcw, GripVertical, Thermometer } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import type { AppData, Habit as HabitType } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
@@ -23,6 +23,11 @@ import {
   computeStreak,
   computeConsistency,
   weeklyProgress,
+  sortByTodayCompletion,
+  reorderActiveHabits,
+  isHabitExcused,
+  toggleHabitExcused,
+  isSettledToday,
 } from '../utils/habits';
 
 const JS_DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -51,7 +56,9 @@ export default function Habit() {
   const [editing, setEditing] = useState<HabitType | null>(null);
 
   const todayKey = getDateKey();
-  const habits = activeHabits(data);
+  // Urutan dasar mengikuti urutan kustom hasil drag & drop, dengan yang
+  // sudah tercatat penuh hari ini turun ke bawah.
+  const habits = sortByTodayCompletion(data, activeHabits(data), todayKey);
   const archived = archivedHabits(data);
   // 7 hari terakhir, dari yang paling lama ke hari ini
   const last7 = Array.from({ length: 7 }, (_, i) => shiftDateKey(todayKey, -(6 - i)));
@@ -94,19 +101,18 @@ export default function Habit() {
             </p>
           </div>
         ) : (
-          habits.map((habit) => (
-            <HabitCard
-              key={habit.id}
-              data={data}
-              habit={habit}
-              todayKey={todayKey}
-              last7={last7}
-              onCycle={(key) => setData((prev) => cycleHabit(prev, key, habit))}
-              onEdit={() => { setEditing(habit); setShowModal(true); }}
-              onArchive={() => setData((prev) => archiveHabit(prev, habit.id))}
-              onDelete={() => setData((prev) => deleteHabit(prev, habit.id))}
-            />
-          ))
+          <HabitList
+            habits={habits}
+            data={data}
+            todayKey={todayKey}
+            last7={last7}
+            onCycle={(habit, key) => setData((prev) => cycleHabit(prev, key, habit))}
+            onToggleExcused={(habit) => setData((prev) => toggleHabitExcused(prev, todayKey, habit.id))}
+            onEdit={(habit) => { setEditing(habit); setShowModal(true); }}
+            onArchive={(habit) => setData((prev) => archiveHabit(prev, habit.id))}
+            onDelete={(habit) => setData((prev) => deleteHabit(prev, habit.id))}
+            onReorder={(orderedIds) => setData((prev) => reorderActiveHabits(prev, orderedIds))}
+          />
         )}
 
         <button
@@ -138,21 +144,194 @@ export default function Habit() {
   );
 }
 
+// Daftar habit dengan drag & drop untuk mengurutkan ulang (via handle grip).
+// Hanya habit yang belum selesai hari ini yang bisa diseret — yang sudah
+// selesai otomatis turun ke bawah dan urutannya tidak relevan untuk hari ini.
+// Perpindahan (baik dari drag maupun dari auto-sink saat dicentang) dianimasikan
+// dengan teknik FLIP: ukur posisi lama, lalu geser mundur & animasikan ke posisi baru.
+function HabitList({
+  habits,
+  data,
+  todayKey,
+  last7,
+  onCycle,
+  onToggleExcused,
+  onEdit,
+  onArchive,
+  onDelete,
+  onReorder,
+}: {
+  habits: HabitType[];
+  data: AppData;
+  todayKey: string;
+  last7: string[];
+  onCycle: (habit: HabitType, dateKey: string) => void;
+  onToggleExcused: (habit: HabitType) => void;
+  onEdit: (habit: HabitType) => void;
+  onArchive: (habit: HabitType) => void;
+  onDelete: (habit: HabitType) => void;
+  onReorder: (orderedActiveIds: string[]) => void;
+}) {
+  const baseOrder = habits.map((h) => h.id);
+  const habitMap = new Map(habits.map((h) => [h.id, h]));
+  const pendingCount = habits.filter((h) => !isSettledToday(data, h, todayKey)).length;
+
+  const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const itemRefs = useRef(new Map<string, HTMLDivElement>()).current;
+  const dragInfo = useRef<{ startClientY: number; startTop: number; height: number } | null>(null);
+  const prevRects = useRef(new Map<string, DOMRect>()).current;
+
+  const order = liveOrder ?? baseOrder;
+
+  // FLIP: setiap kali urutan berubah (drag atau auto-sink), geser item yang
+  // bukan sedang diseret dari posisi lamanya lalu animasikan ke posisi baru.
+  useLayoutEffect(() => {
+    const nextRects = new Map<string, DOMRect>();
+    itemRefs.forEach((el, id) => {
+      if (id === draggingId) return;
+      nextRects.set(id, el.getBoundingClientRect());
+    });
+    nextRects.forEach((rect, id) => {
+      const before = prevRects.get(id);
+      if (!before) return;
+      const dy = before.top - rect.top;
+      if (Math.abs(dy) < 0.5) return;
+      const el = itemRefs.get(id);
+      if (!el) return;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      el.getBoundingClientRect(); // paksa reflow
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
+        el.style.transform = '';
+      });
+    });
+    prevRects.clear();
+    nextRects.forEach((rect, id) => prevRects.set(id, rect));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.join('|')]);
+
+  const startDrag = (habit: HabitType) => (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const el = itemRefs.get(habit.id);
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragInfo.current = { startClientY: e.clientY, startTop: rect.top, height: rect.height };
+    setLiveOrder(baseOrder);
+    setDraggingId(habit.id);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(10); } catch { /* noop */ }
+    }
+  };
+
+  const moveDrag = (habit: HabitType) => (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragInfo.current || draggingId !== habit.id) return;
+    e.preventDefault();
+    const deltaY = e.clientY - dragInfo.current.startClientY;
+    const el = itemRefs.get(habit.id);
+    if (el) el.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+
+    const centerY = dragInfo.current.startTop + deltaY + dragInfo.current.height / 2;
+    const currentOrder = liveOrder ?? baseOrder;
+    const others = currentOrder.filter((id) => id !== habit.id);
+
+    let idx = 0;
+    for (const id of others) {
+      const otherEl = itemRefs.get(id);
+      if (!otherEl) continue;
+      const rect = otherEl.getBoundingClientRect();
+      if (centerY > rect.top + rect.height / 2) idx++;
+    }
+    // Tidak boleh diseret melewati zona habit yang sudah selesai hari ini
+    const maxIdx = Math.max(0, pendingCount - 1);
+    idx = Math.min(idx, maxIdx);
+
+    const next = [...others];
+    next.splice(idx, 0, habit.id);
+    if (next.join('|') !== currentOrder.join('|')) setLiveOrder(next);
+  };
+
+  const endDrag = (habit: HabitType) => () => {
+    const el = itemRefs.get(habit.id);
+    if (el) {
+      el.style.transition = 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)';
+      el.style.transform = '';
+    }
+    if (liveOrder && liveOrder.join('|') !== baseOrder.join('|')) {
+      onReorder(liveOrder);
+    }
+    dragInfo.current = null;
+    setDraggingId(null);
+    setLiveOrder(null);
+  };
+
+  return (
+    <div className="space-y-3">
+      {order.map((id) => {
+        const habit = habitMap.get(id);
+        if (!habit) return null;
+        const isPending = !isSettledToday(data, habit, todayKey);
+        const isDragging = draggingId === habit.id;
+        return (
+          <HabitCard
+            key={habit.id}
+            cardRef={(el) => { if (el) itemRefs.set(habit.id, el); else itemRefs.delete(habit.id); }}
+            isDragging={isDragging}
+            draggable={isPending}
+            dragHandleProps={{
+              onPointerDown: startDrag(habit),
+              onPointerMove: moveDrag(habit),
+              onPointerUp: endDrag(habit),
+              onPointerCancel: endDrag(habit),
+            }}
+            data={data}
+            habit={habit}
+            todayKey={todayKey}
+            last7={last7}
+            onCycle={(key) => onCycle(habit, key)}
+            onToggleExcused={() => onToggleExcused(habit)}
+            onEdit={() => onEdit(habit)}
+            onArchive={() => onArchive(habit)}
+            onDelete={() => onDelete(habit)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function HabitCard({
+  cardRef,
+  isDragging,
+  draggable,
+  dragHandleProps,
   data,
   habit,
   todayKey,
   last7,
   onCycle,
+  onToggleExcused,
   onEdit,
   onArchive,
   onDelete,
 }: {
+  cardRef?: (el: HTMLDivElement | null) => void;
+  isDragging?: boolean;
+  draggable?: boolean;
+  dragHandleProps?: {
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
+    onPointerMove: (e: React.PointerEvent<HTMLButtonElement>) => void;
+    onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => void;
+    onPointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => void;
+  };
   data: AppData;
   habit: HabitType;
   todayKey: string;
   last7: string[];
   onCycle: (dateKey: string) => void;
+  onToggleExcused: () => void;
   onEdit: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -172,6 +351,7 @@ function HabitCard({
 
   const streak = computeStreak(data, habit, todayKey);
   const streakUnit = isWeekly ? 'minggu' : 'hari';
+  const excusedToday = isHabitExcused(data, todayKey, habit.id);
 
   // Bar progres: habit mingguan -> progres minggu ini; harian -> konsistensi 30 hari
   const week = weeklyProgress(data, habit, todayKey);
@@ -186,10 +366,27 @@ function HabitCard({
       : null;
 
   return (
-    <div className="glass-card p-4 md:p-5 shadow-sm">
+    <div
+      ref={cardRef}
+      style={isDragging ? { zIndex: 30, boxShadow: '0 24px 48px -12px rgba(10,37,64,0.35)' } : undefined}
+      className="glass-card p-4 md:p-5 shadow-sm"
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {draggable && dragHandleProps && (
+            <button
+              type="button"
+              aria-label={`Seret untuk mengurutkan ${habit.name}`}
+              onPointerDown={dragHandleProps.onPointerDown}
+              onPointerMove={dragHandleProps.onPointerMove}
+              onPointerUp={dragHandleProps.onPointerUp}
+              onPointerCancel={dragHandleProps.onPointerCancel}
+              className="shrink-0 -ml-1 p-1.5 rounded-lg text-slate-300 touch-none cursor-grab active:cursor-grabbing hover:text-slate-500 hover:bg-mist transition-colors dark:text-slate-600 dark:hover:text-slate-400 dark:hover:bg-night-border"
+            >
+              <GripVertical size={16} />
+            </button>
+          )}
           <span className="text-xl shrink-0">{habit.icon || '🎯'}</span>
           <div className="min-w-0">
             <h3 className="text-deep-navy font-semibold text-sm md:text-base truncate dark:text-slate-100">
@@ -258,6 +455,7 @@ function HabitCard({
           const count = getHabitCount(data, key, habit.id);
           const complete = count >= cap;
           const partial = count > 0 && !complete;
+          const excused = isHabitExcused(data, key, habit.id);
           const isToday = key === todayKey;
           const editable = key === todayKey || key === yesterdayKey;
           const dayLabel = JS_DAY_SHORT[parseDateKey(key).getDay()];
@@ -280,18 +478,32 @@ function HabitCard({
               className={`w-7 h-7 rounded-full grid place-items-center border-2 text-xs font-semibold tabular-nums transition-colors ${
                 shouldPop ? 'anim-pop ' : ''
               }${
-                complete
-                  ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
-                  : partial
-                    ? 'bg-ocean-blue/15 border-ocean-blue text-ocean-blue dark:bg-sky-tint/15 dark:border-sky-tint dark:text-sky-tint'
-                    : isToday
-                      ? 'border-ocean-blue/50 text-transparent dark:border-sky-tint/50'
-                      : 'border-mist text-transparent dark:border-night-border'
+                excused
+                  ? 'bg-amber-400 border-amber-400 text-white dark:bg-amber-500 dark:border-amber-500'
+                  : complete
+                    ? 'bg-ocean-blue border-ocean-blue text-white dark:bg-sky-tint dark:border-sky-tint dark:text-night'
+                    : partial
+                      ? 'bg-ocean-blue/15 border-ocean-blue text-ocean-blue dark:bg-sky-tint/15 dark:border-sky-tint dark:text-sky-tint'
+                      : isToday
+                        ? 'border-ocean-blue/50 text-transparent dark:border-sky-tint/50'
+                        : 'border-mist text-transparent dark:border-night-border'
               }`}
             >
-              {cap > 1 ? (partial ? count : complete ? cap : '') : <Check size={14} strokeWidth={3} />}
+              {excused ? (
+                <Thermometer size={13} strokeWidth={2.5} />
+              ) : cap > 1 ? (
+                partial ? count : complete ? cap : ''
+              ) : (
+                <Check size={14} strokeWidth={3} />
+              )}
             </span>
           );
+
+          const cellStatus = excused
+            ? 'sakit/berhalangan'
+            : count > 0
+              ? `${count}${cap > 1 ? `/${cap}` : ''}`
+              : 'kosong';
 
           return editable ? (
             <button
@@ -301,7 +513,7 @@ function HabitCard({
                 onCycle(key);
                 setPop((p) => ({ key, n: (p?.n ?? 0) + 1 }));
               }}
-              aria-label={`Catat ${habit.name} ${isToday ? 'hari ini' : 'kemarin'} (sekarang ${count}${cap > 1 ? ` dari ${cap}` : ''})`}
+              aria-label={`Catat ${habit.name} ${isToday ? 'hari ini' : 'kemarin'} (sekarang ${cellStatus})`}
               className="flex flex-col items-center gap-1 py-1"
             >
               {label}
@@ -310,7 +522,7 @@ function HabitCard({
           ) : (
             <div
               key={key}
-              title={`${habit.name} pada ${key}: ${count > 0 ? `${count}${cap > 1 ? `/${cap}` : ''}` : 'kosong'}`}
+              title={`${habit.name} pada ${key}: ${cellStatus}`}
               className="flex flex-col items-center gap-1 py-1 opacity-70"
             >
               {label}
@@ -320,20 +532,38 @@ function HabitCard({
         })}
       </div>
 
-      {/* Toggle riwayat heatmap */}
-      <button
-        type="button"
-        onClick={() => setShowHeatmap((v) => !v)}
-        aria-expanded={showHeatmap ? 'true' : 'false'}
-        className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-ocean-blue transition-colors dark:text-slate-400 dark:hover:text-sky-tint"
-      >
-        <CalendarDays size={14} />
-        {showHeatmap ? 'Sembunyikan riwayat' : 'Lihat riwayat'}
-        <ChevronDown
-          size={14}
-          className={`transition-transform ${showHeatmap ? 'rotate-180' : ''}`}
-        />
-      </button>
+      {/* Aksi kartu: masing-masing di barisnya sendiri biar rapi */}
+      <div className="mt-3 flex flex-col items-start gap-2">
+        {/* Tandai sakit/berhalangan hari ini — streak tidak putus, tapi juga tidak bertambah */}
+        <button
+          type="button"
+          onClick={onToggleExcused}
+          aria-pressed={excusedToday ? 'true' : 'false'}
+          className={`inline-flex items-center gap-1.5 text-xs font-medium transition-colors ${
+            excusedToday
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400'
+          }`}
+        >
+          <Thermometer size={14} />
+          {excusedToday ? 'Batalkan tanda sakit hari ini' : 'Sakit/berhalangan hari ini?'}
+        </button>
+
+        {/* Toggle riwayat heatmap */}
+        <button
+          type="button"
+          onClick={() => setShowHeatmap((v) => !v)}
+          aria-expanded={showHeatmap ? 'true' : 'false'}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-ocean-blue transition-colors dark:text-slate-400 dark:hover:text-sky-tint"
+        >
+          <CalendarDays size={14} />
+          {showHeatmap ? 'Sembunyikan riwayat' : 'Lihat riwayat'}
+          <ChevronDown
+            size={14}
+            className={`transition-transform ${showHeatmap ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
 
       {showHeatmap && (
         <div className="anim-fade-up">
