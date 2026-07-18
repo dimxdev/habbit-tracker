@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight, ChevronDown, Check, Target, Flame, Thermometer } from 'lucide-react';
+import { Quote, CalendarX2, Clock, NotebookPen, CalendarClock, ChevronRight, ChevronDown, Check, Target, Flame, Thermometer, Plus, ShieldAlert } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
-import type { AppData, TimeSlot, DailyNote } from '../types';
+import type { AppData, TimeSlot, DailyNote, Habit } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
 import { motivations } from '../data/motivations';
 import {
@@ -12,6 +12,7 @@ import {
   getCurrentTimeString,
   formatDateIndonesia,
   getSlotStatus,
+  shiftDateKey,
 } from '../utils/helpers';
 import { getNotesFor, addNote, updateNote, deleteNote } from '../utils/dailyNotes';
 import { isDone, toggleDone, countDone } from '../utils/completion';
@@ -26,10 +27,17 @@ import {
   activeHabits,
   sortByTodayCompletion,
   isHabitExcused,
+  isSettledToday,
+  flameTier,
+  crossedMilestone,
+  getStreakAtRisk,
 } from '../utils/habits';
+import { newlyEarnedBadges } from '../utils/badges';
+import { haptic, HAPTIC, prefersReducedMotion } from '../utils/feedback';
+import { useCelebration } from '../components/Celebration';
 import DailyNotesEditor from '../components/DailyNotesEditor';
 import ProgressRing from '../components/ProgressRing';
-// import WeeklyRecap from '../components/WeeklyRecap'; // sementara dinonaktifkan
+import WeeklyRecap from '../components/WeeklyRecap';
 
 export default function Dashboard() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
@@ -72,12 +80,8 @@ export default function Dashboard() {
   const deleteJournal = (id: string) =>
     setData((prev) => deleteNote(prev, 'journal', todayDateKey, id));
 
-  // Progres hari ini = jadwal + agenda yang ditandai selesai
-  const allTodayIds = [...slots.map((s) => s.id), ...agendaToday.map((a) => a.id)];
-  const totalCount = allTodayIds.length;
-  const doneCount = countDone(data, todayDateKey, allTodayIds);
-  const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
-  const toggleItem = (id: string) => setData((prev) => toggleDone(prev, todayDateKey, id));
+  const { celebrate, node: celebrationNode } = useCelebration();
+  const yesterdayDateKey = shiftDateKey(todayDateKey, -1);
 
   // Habit (hanya yang aktif; yang diarsipkan disembunyikan).
   // Urutan dasar mengikuti urutan kustom hasil drag & drop di menu Habit;
@@ -85,19 +89,79 @@ export default function Dashboard() {
   const habits = sortByTodayCompletion(data, activeHabits(data), todayDateKey);
   const habitDoneCount = habits.filter((h) => isPeriodComplete(data, h, todayDateKey)).length;
 
+  // Progres hari ini = jadwal + agenda + habit yang selesai (angka hero jujur)
+  const allTodayIds = [...slots.map((s) => s.id), ...agendaToday.map((a) => a.id)];
+  const totalCount = allTodayIds.length + habits.length;
+  const doneCount = countDone(data, todayDateKey, allTodayIds) + habitDoneCount;
+  const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+  const toggleItem = (id: string) => setData((prev) => toggleDone(prev, todayDateKey, id));
+
+  // Habit yang streak-nya terancam hangus (bisa diselamatkan dg mencatat kemarin)
+  const atRisk = habits
+    .map((h) => ({ habit: h, n: getStreakAtRisk(data, h, todayDateKey) }))
+    .filter((x) => x.n > 0);
+
+  // Catat habit + rayakan momen penting (perfect day / milestone / badge).
+  const logHabit = (habit: Habit, dateKey: string = todayDateKey) => {
+    const before = data;
+    const after = cycleHabit(before, dateKey, habit);
+    setData(after);
+
+    const wasComplete = isPeriodComplete(before, habit, todayDateKey);
+    const nowComplete = isPeriodComplete(after, habit, todayDateKey);
+    haptic(nowComplete && !wasComplete ? HAPTIC.complete : HAPTIC.tap);
+
+    const beforeStreak = computeStreak(before, habit, todayDateKey);
+    const afterStreak = computeStreak(after, habit, todayDateKey);
+    const ms = crossedMilestone(beforeStreak, afterStreak);
+
+    const activeAfter = activeHabits(after);
+    const doneAfter = activeAfter.filter((x) => isSettledToday(after, x, todayDateKey)).length;
+    const doneBefore = activeHabits(before).filter((x) => isSettledToday(before, x, todayDateKey)).length;
+    const perfect = activeAfter.length > 0 && doneAfter === activeAfter.length && doneBefore < activeAfter.length;
+
+    const newBadges = newlyEarnedBadges(before, after, todayDateKey);
+
+    if (perfect) {
+      celebrate('Hari Sempurna! Semua habit beres 🎉', { big: true });
+      haptic(HAPTIC.celebrate);
+    } else if (ms) {
+      celebrate(`Streak ${ms} hari! Terus jaga apinya 🔥`, { big: true });
+      haptic(HAPTIC.celebrate);
+    } else if (newBadges.length > 0) {
+      celebrate(`Badge baru: ${newBadges[0].emoji} ${newBadges[0].name}`, { big: true });
+      haptic(HAPTIC.celebrate);
+    }
+  };
+
+  // Sapaan adaptif berdasarkan waktu & keadaan hari ini
+  const hour = today.getHours();
+  const greeting =
+    hour < 11 ? 'Selamat pagi' : hour < 15 ? 'Selamat siang' : hour < 18 ? 'Selamat sore' : 'Selamat malam';
+  const activeStreaks = habits.filter((h) => computeStreak(data, h, todayDateKey) > 0).length;
+  const headline =
+    habits.length > 0 && habitDoneCount === habits.length
+      ? 'Semua habit beres. Luar biasa hari ini! 🎉'
+      : habits.length > 0 && habitDoneCount === habits.length - 1
+        ? 'Tinggal 1 habit lagi untuk Hari Sempurna 💪'
+        : activeStreaks > 0
+          ? `Kamu sedang on-fire — ${activeStreaks} streak aktif 🔥`
+          : 'Satu langkah kecil hari ini berarti besar.';
+
   return (
     <div>
-      <header className="bg-linear-to-br from-deep-navy to-ocean-blue px-5 pt-10 pb-10 md:mt-6 md:rounded-3xl md:px-8 md:pt-9 md:pb-11 md:shadow-sm">
-        <p className="text-sky-tint text-sm font-medium mb-1">Hari ini</p>
+      <header className="relative overflow-hidden bg-linear-to-br from-deep-navy to-ocean-blue px-5 pt-10 pb-10 md:mt-6 md:rounded-3xl md:px-8 md:pt-9 md:pb-11 md:shadow-sm">
+        <p className="text-sky-tint text-sm font-medium mb-1">{greeting} 👋</p>
         <h1 className="text-white text-2xl md:text-3xl font-bold leading-snug capitalize">
           {formatDateIndonesia(today)}
         </h1>
         <span className="text-white text-xl font-semibold tabular-nums tracking-tight mt-1 block">
           {clockTime}
         </span>
+        <p className="text-sky-tint text-sm mt-2">{headline}</p>
       </header>
 
-      <div className="px-4 md:px-8 -mt-5 space-y-6">
+      <div className="anim-stagger px-4 md:px-8 -mt-5 space-y-6">
         {/* Motivation Card */}
         <div className="glass-card p-5">
           <Quote size={22} className="text-sky-tint mb-2" />
@@ -218,17 +282,49 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Rekap mingguan — sementara dinonaktifkan */}
-        {/* {habits.length > 0 && <WeeklyRecap data={data} todayKey={todayDateKey} />} */}
+        {/* Rekap mingguan */}
+        {habits.length > 0 && <WeeklyRecap data={data} todayKey={todayDateKey} />}
+
+        {/* Nudge: streak yang terancam hangus — selamatkan dengan 1 ketukan */}
+        {atRisk.length > 0 && (
+          <div className="glass-card p-4 border border-amber-300/70 shadow-sm dark:border-amber-500/40">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldAlert size={16} className="text-amber-500" />
+              <h2 className="text-sm font-semibold text-deep-navy dark:text-slate-100">
+                Streak terancam hangus
+              </h2>
+            </div>
+            <ul className="space-y-1">
+              {atRisk.map(({ habit, n }) => (
+                <li key={habit.id}>
+                  <button
+                    type="button"
+                    onClick={() => logHabit(habit, yesterdayDateKey)}
+                    className="w-full flex items-center justify-between gap-2 text-left rounded-lg px-2 py-1.5 hover:bg-amber-50 transition-colors dark:hover:bg-amber-500/10"
+                  >
+                    <span className="min-w-0 truncate text-sm text-deep-navy dark:text-slate-100">
+                      {habit.icon ? `${habit.icon} ` : ''}
+                      {habit.name}
+                    </span>
+                    <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      catat kemarin · <Flame size={12} />
+                      {n}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Habit Hari Ini — centang cepat */}
-        {habits.length > 0 && (
-          <div className="glass-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
-                <Target size={18} className="text-ocean-blue dark:text-sky-tint" />
-                Habit Hari Ini
-              </h2>
+        <div className="glass-card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="inline-flex items-center gap-2 text-deep-navy text-base md:text-lg font-semibold dark:text-slate-100">
+              <Target size={18} className="text-ocean-blue dark:text-sky-tint" />
+              Habit Hari Ini
+            </h2>
+            {habits.length > 0 && (
               <Link
                 to="/habits"
                 className="inline-flex items-center gap-0.5 text-xs font-medium text-ocean-blue hover:underline dark:text-sky-tint"
@@ -236,18 +332,33 @@ export default function Dashboard() {
                 {habitDoneCount}/{habits.length} · Semua
                 <ChevronRight size={14} />
               </Link>
+            )}
+          </div>
+
+          {habits.length === 0 ? (
+            <div className="flex flex-col items-center text-center gap-2 py-4">
+              <span className="text-3xl">🎯</span>
+              <p className="text-slate-400 text-sm dark:text-slate-500">
+                Belum ada habit. Mulai kebiasaan pertamamu!
+              </p>
+              <Link
+                to="/habits?add=habit"
+                className="mt-1 inline-flex items-center gap-1.5 bg-ocean-blue text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-deep-navy transition-colors"
+              >
+                <Plus size={16} />
+                Tambah habit
+              </Link>
             </div>
+          ) : (
             <ul className="space-y-2">
               {habits.map((h) => {
                 const isWeekly = getHabitPeriod(h) === 'week';
                 const cap = perDayCap(h);
                 const todayCount = getHabitCount(data, todayDateKey, h.id);
-                // "Tercentang" = pencatatan hari ini sudah cukup (harian: penuh target; mingguan: minimal sekali)
                 const todayChecked = todayCount >= cap;
                 const excused = isHabitExcused(data, todayDateKey, h.id);
                 const streak = computeStreak(data, h, todayDateKey);
-                // Progres di samping nama: mingguan -> hari tercatat/target minggu;
-                // harian multi-target -> hitungan hari ini/target (selain di lingkaran).
+                const tier = flameTier(streak);
                 const week = weeklyProgress(data, h, todayDateKey);
                 const progress = isWeekly
                   ? `${week.done}/${week.target} mgg`
@@ -256,25 +367,25 @@ export default function Dashboard() {
                     : null;
                 const cycleLabel = `Catat ${h.name}${cap > 1 ? ` (${todayCount}/${cap})` : ''}`;
                 return (
-                  <li key={`${h.id}-${todayChecked}`} className="anim-fade-up flex items-center gap-3">
+                  <li key={h.id} className="flex items-center gap-3">
                     <CheckButton
                       done={todayChecked}
                       excused={excused}
                       round
                       count={todayCount}
                       cap={cap}
-                      onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
+                      onClick={() => logHabit(h)}
                       label={cycleLabel}
                     />
                     {/* Klik nama/progres/streak juga mencatat habit — bukan cuma lingkaran */}
                     <button
                       type="button"
-                      onClick={() => setData((prev) => cycleHabit(prev, todayDateKey, h))}
+                      onClick={() => logHabit(h)}
                       aria-label={cycleLabel}
                       className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left py-1 -my-1"
                     >
                       <span
-                        className={`min-w-0 truncate text-sm ${
+                        className={`min-w-0 truncate text-sm transition-colors ${
                           todayChecked
                             ? 'line-through text-slate-400 dark:text-slate-500'
                             : 'text-deep-navy dark:text-slate-100'
@@ -297,8 +408,11 @@ export default function Dashboard() {
                           )
                         )}
                         {streak > 0 && (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-500">
-                            <Flame size={13} />
+                          <span className={`inline-flex items-center gap-1 text-xs font-semibold ${tier.className}`}>
+                            <Flame
+                              size={13}
+                              className={`${tier.glow ? 'flame-glow ' : ''}${!prefersReducedMotion() ? 'flame-live' : ''}`}
+                            />
                             {streak}
                           </span>
                         )}
@@ -308,8 +422,8 @@ export default function Dashboard() {
                 );
               })}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Catatan Harian — jurnal/refleksi hari ini (paling bawah) */}
         <div className="glass-card p-5">
@@ -336,6 +450,7 @@ export default function Dashboard() {
           />
         </div>
       </div>
+      {celebrationNode}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Pencil, Trash2, Copy, Plus, AlertTriangle } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import type { AppData, DayKey, TimeSlot } from '../types';
@@ -8,8 +9,10 @@ import { DAY_KEYS, DAY_LABELS, DAY_SHORT, getTodayKey, generateId, toTitleCase, 
 
 export default function Schedule() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
+  const [searchParams] = useSearchParams();
   const [selectedDay, setSelectedDay] = useState<DayKey>(getTodayKey());
-  const [showSlotModal, setShowSlotModal] = useState(false);
+  // Buka modal tambah otomatis bila datang dari tombol quick-add (?add=slot)
+  const [showSlotModal, setShowSlotModal] = useState(() => searchParams.get('add') === 'slot');
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);

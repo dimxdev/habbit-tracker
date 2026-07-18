@@ -1,10 +1,13 @@
 import { useState, useRef, useLayoutEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Check, Flame, CalendarDays, ChevronDown, Minus, Archive, RotateCcw, GripVertical, Thermometer } from 'lucide-react';
 import useStorage from '../hooks/useStorage';
 import type { AppData, Habit as HabitType } from '../types';
 import { DEFAULT_DATA } from '../data/defaultData';
 import PageHeader from '../components/PageHeader';
 import HabitHeatmap from '../components/HabitHeatmap';
+import BadgeShelf from '../components/BadgeShelf';
+import { useCelebration } from '../components/Celebration';
 import { getDateKey, shiftDateKey, parseDateKey, toTitleCase, formatDateKeyLong } from '../utils/helpers';
 import {
   addHabit,
@@ -28,13 +31,28 @@ import {
   isHabitExcused,
   toggleHabitExcused,
   isSettledToday,
+  flameTier,
+  getNextMilestone,
+  crossedMilestone,
 } from '../utils/habits';
+import { newlyEarnedBadges } from '../utils/badges';
+import { haptic, HAPTIC, prefersReducedMotion } from '../utils/feedback';
 
 const JS_DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const EMOJI_CHOICES = ['🎯', '💧', '🏃', '📖', '🧘', '💪', '🥗', '😴', '🙏', '✍️', '🎸', '🧹'];
 const PERIOD_OPTIONS: { value: 'day' | 'week'; label: string }[] = [
   { value: 'day', label: 'Per hari' },
   { value: 'week', label: 'Per minggu' },
+];
+
+// Template habit siap-pakai untuk first-run — 1 ketuk langsung jadi.
+const STARTER_TEMPLATES: { name: string; icon: string; target: number; period: 'day' | 'week' }[] = [
+  { name: 'Minum Air', icon: '💧', target: 8, period: 'day' },
+  { name: 'Sholat', icon: '🙏', target: 5, period: 'day' },
+  { name: 'Olahraga', icon: '🏃', target: 3, period: 'week' },
+  { name: 'Baca Buku', icon: '📖', target: 1, period: 'day' },
+  { name: 'Tidur Cukup', icon: '😴', target: 1, period: 'day' },
+  { name: 'Jurnal Harian', icon: '✍️', target: 1, period: 'day' },
 ];
 
 // Ambil satu "karakter tampak" pertama (grapheme) — supaya emoji gabungan
@@ -52,8 +70,20 @@ const firstEmoji = (value: string): string => {
 
 export default function Habit() {
   const [data, setData] = useStorage<AppData>('habbit-tracker-data', DEFAULT_DATA);
-  const [showModal, setShowModal] = useState(false);
+  const [searchParams] = useSearchParams();
+  // Buka modal tambah otomatis bila datang dari tombol quick-add (?add=habit)
+  const [showModal, setShowModal] = useState(() => searchParams.get('add') === 'habit');
   const [editing, setEditing] = useState<HabitType | null>(null);
+  const { celebrate, node: celebrationNode } = useCelebration();
+
+  // Hint drag sekali-tampil (disimpan di localStorage)
+  const [dragHintSeen, setDragHintSeen] = useState(
+    () => typeof localStorage !== 'undefined' && localStorage.getItem('habit-drag-hint') === '1'
+  );
+  const dismissDragHint = () => {
+    try { localStorage.setItem('habit-drag-hint', '1'); } catch { /* noop */ }
+    setDragHintSeen(true);
+  };
 
   const todayKey = getDateKey();
   // Urutan dasar mengikuti urutan kustom hasil drag & drop, dengan yang
@@ -63,14 +93,55 @@ export default function Habit() {
   // 7 hari terakhir, dari yang paling lama ke hari ini
   const last7 = Array.from({ length: 7 }, (_, i) => shiftDateKey(todayKey, -(6 - i)));
 
-  const saveHabit = (name: string, icon: string | undefined, target: number, period: 'day' | 'week') => {
+  const saveHabit = (
+    name: string,
+    icon: string | undefined,
+    target: number,
+    period: 'day' | 'week',
+    why?: string
+  ) => {
     setData((prev) =>
       editing
-        ? updateHabit(prev, editing.id, name, icon, target, period)
-        : addHabit(prev, name, icon, target, period)
+        ? updateHabit(prev, editing.id, name, icon, target, period, why)
+        : addHabit(prev, name, icon, target, period, why)
     );
     setShowModal(false);
     setEditing(null);
+  };
+
+  const addStarter = (t: (typeof STARTER_TEMPLATES)[number]) =>
+    setData((prev) => addHabit(prev, t.name, t.icon, t.target, t.period));
+
+  // Catat habit + rayakan momen penting (perfect day / milestone / badge).
+  const logHabit = (habit: HabitType, key: string) => {
+    const before = data;
+    const after = cycleHabit(before, key, habit);
+    setData(after);
+
+    const wasComplete = isPeriodComplete(before, habit, todayKey);
+    const nowComplete = isPeriodComplete(after, habit, todayKey);
+    haptic(nowComplete && !wasComplete ? HAPTIC.complete : HAPTIC.tap);
+
+    const ms = crossedMilestone(
+      computeStreak(before, habit, todayKey),
+      computeStreak(after, habit, todayKey)
+    );
+    const activeAfter = activeHabits(after);
+    const doneAfter = activeAfter.filter((x) => isSettledToday(after, x, todayKey)).length;
+    const doneBefore = activeHabits(before).filter((x) => isSettledToday(before, x, todayKey)).length;
+    const perfect = activeAfter.length > 0 && doneAfter === activeAfter.length && doneBefore < activeAfter.length;
+    const newBadges = newlyEarnedBadges(before, after, todayKey);
+
+    if (perfect) {
+      celebrate('Hari Sempurna! Semua habit beres 🎉', { big: true });
+      haptic(HAPTIC.celebrate);
+    } else if (ms) {
+      celebrate(`Streak ${ms} hari! Terus jaga apinya 🔥`, { big: true });
+      haptic(HAPTIC.celebrate);
+    } else if (newBadges.length > 0) {
+      celebrate(`Badge baru: ${newBadges[0].emoji} ${newBadges[0].name}`, { big: true });
+      haptic(HAPTIC.celebrate);
+    }
   };
 
   const doneTodayCount = habits.filter((h) => isPeriodComplete(data, h, todayKey)).length;
@@ -94,25 +165,61 @@ export default function Habit() {
 
       <div className="px-4 md:px-8 -mt-5 space-y-3">
         {habits.length === 0 ? (
-          <div className="glass-card p-8 md:p-12 flex flex-col items-center text-center gap-3">
+          <div className="glass-card p-5 md:p-6 text-center">
             <span className="text-4xl">🎯</span>
-            <p className="text-slate-400 text-sm dark:text-slate-500">
-              Belum ada habit. Tambah kebiasaan pertamamu!
+            <p className="text-deep-navy text-sm font-medium mt-2 dark:text-slate-100">
+              Mulai kebiasaan pertamamu
             </p>
+            <p className="text-slate-400 text-xs mt-0.5 mb-4 dark:text-slate-500">
+              Pilih salah satu, atau buat sendiri di bawah.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {STARTER_TEMPLATES.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => addStarter(t)}
+                  className="flex flex-col items-center gap-1 rounded-xl border border-mist px-2 py-3 hover:border-ocean-blue hover:bg-mist/50 transition-colors dark:border-night-border dark:hover:border-sky-tint dark:hover:bg-night-border/50"
+                >
+                  <span className="text-2xl">{t.icon}</span>
+                  <span className="text-xs font-medium text-deep-navy dark:text-slate-100">{t.name}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                    {t.target}× / {t.period === 'day' ? 'hari' : 'minggu'}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
-          <HabitList
-            habits={habits}
-            data={data}
-            todayKey={todayKey}
-            last7={last7}
-            onCycle={(habit, key) => setData((prev) => cycleHabit(prev, key, habit))}
-            onToggleExcused={(habit) => setData((prev) => toggleHabitExcused(prev, todayKey, habit.id))}
-            onEdit={(habit) => { setEditing(habit); setShowModal(true); }}
-            onArchive={(habit) => setData((prev) => archiveHabit(prev, habit.id))}
-            onDelete={(habit) => setData((prev) => deleteHabit(prev, habit.id))}
-            onReorder={(orderedIds) => setData((prev) => reorderActiveHabits(prev, orderedIds))}
-          />
+          <>
+            {habits.length >= 2 && !dragHintSeen && (
+              <div className="glass-card px-4 py-2.5 flex items-center justify-between gap-2 shadow-sm">
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  <GripVertical size={14} className="text-slate-400" />
+                  Seret ikon ini untuk mengatur prioritas habit.
+                </span>
+                <button
+                  type="button"
+                  onClick={dismissDragHint}
+                  className="shrink-0 text-xs font-medium text-ocean-blue hover:underline dark:text-sky-tint"
+                >
+                  Mengerti
+                </button>
+              </div>
+            )}
+            <HabitList
+              habits={habits}
+              data={data}
+              todayKey={todayKey}
+              last7={last7}
+              onCycle={(habit, key) => logHabit(habit, key)}
+              onToggleExcused={(habit) => setData((prev) => toggleHabitExcused(prev, todayKey, habit.id))}
+              onEdit={(habit) => { setEditing(habit); setShowModal(true); }}
+              onArchive={(habit) => setData((prev) => archiveHabit(prev, habit.id))}
+              onDelete={(habit) => setData((prev) => deleteHabit(prev, habit.id))}
+              onReorder={(orderedIds) => setData((prev) => reorderActiveHabits(prev, orderedIds))}
+            />
+          </>
         )}
 
         <button
@@ -123,6 +230,8 @@ export default function Habit() {
           <Plus size={18} />
           Tambah Habit
         </button>
+
+        <BadgeShelf data={data} todayKey={todayKey} />
 
         {archived.length > 0 && (
           <ArchiveSection
@@ -140,6 +249,7 @@ export default function Habit() {
           onClose={() => { setShowModal(false); setEditing(null); }}
         />
       )}
+      {celebrationNode}
     </div>
   );
 }
@@ -179,6 +289,7 @@ function HabitList({
   const baseOrder = habits.map((h) => h.id);
   const habitMap = new Map(habits.map((h) => [h.id, h]));
   const pendingCount = habits.filter((h) => !isSettledToday(data, h, todayKey)).length;
+  const reduceMotion = prefersReducedMotion();
 
   const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -214,7 +325,7 @@ function HabitList({
       if (id === drag.current?.id) return;
       const last = el.offsetTop;
       const first = prevTops.get(id);
-      if (first !== undefined && Math.abs(first - last) > 0.5) {
+      if (!reduceMotion && first !== undefined && Math.abs(first - last) > 0.5) {
         el.animate(
           [{ transform: `translateY(${first - last}px)` }, { transform: 'translateY(0)' }],
           { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
@@ -237,9 +348,7 @@ function HabitList({
     setLiveOrder(baseOrder);
     applyDragTransform();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try { navigator.vibrate(10); } catch { /* noop */ }
-    }
+    haptic(10);
   };
 
   const moveDrag = (habit: HabitType) => (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -274,14 +383,14 @@ function HabitList({
     const el = itemRefs.get(habit.id);
     if (el) {
       // Bersihkan semua gaya drag, biarkan menyettle ke slot-nya dengan halus
-      el.style.transition = 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
+      el.style.transition = reduceMotion ? '' : 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
       el.style.transform = '';
       el.style.zIndex = '';
       el.style.boxShadow = '';
       el.style.position = '';
       el.style.cursor = '';
       el.style.willChange = '';
-      window.setTimeout(() => { if (el) el.style.transition = ''; }, 260);
+      if (!reduceMotion) window.setTimeout(() => { if (el) el.style.transition = ''; }, 260);
     }
     if (liveOrder && liveOrder.join('|') !== baseOrder.join('|')) {
       onReorder(liveOrder);
@@ -371,6 +480,9 @@ function HabitCard({
   const streak = computeStreak(data, habit, todayKey);
   const streakUnit = isWeekly ? 'minggu' : 'hari';
   const excusedToday = isHabitExcused(data, todayKey, habit.id);
+  const tier = flameTier(streak);
+  const nextMs = getNextMilestone(streak);
+  const liveFlame = streak > 0 && !prefersReducedMotion();
 
   // Bar progres: habit mingguan -> progres minggu ini; harian -> konsistensi 30 hari
   const week = weeklyProgress(data, habit, todayKey);
@@ -413,6 +525,11 @@ function HabitCard({
                 {targetLabel}
               </span>
             )}
+            {habit.why && (
+              <p className="text-[11px] italic text-slate-400 truncate dark:text-slate-500">
+                “{habit.why}”
+              </p>
+            )}
           </div>
         </div>
         <div className="flex gap-1 shrink-0">
@@ -444,14 +561,18 @@ function HabitCard({
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-3 mb-3">
-        <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-500 shrink-0">
-          <Flame size={15} />
+      <div className="flex items-center gap-3 mb-1.5">
+        <span
+          className={`inline-flex items-center gap-1 text-sm font-semibold shrink-0 ${
+            streak > 0 ? tier.className : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <Flame size={15} className={`${tier.glow ? 'flame-glow ' : ''}${liveFlame ? 'flame-live' : ''}`} />
           {streak} {streakUnit}
         </span>
         <div className="flex-1 h-2 rounded-full bg-mist overflow-hidden dark:bg-night-border">
           <div
-            className="h-full rounded-full bg-ocean-blue dark:bg-sky-tint transition-[width] duration-500"
+            className="h-full rounded-full bg-ocean-blue dark:bg-sky-tint transition-[width] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             style={{ width: `${barPercent}%` }}
           />
         </div>
@@ -459,6 +580,14 @@ function HabitCard({
           {barLabel}
         </span>
       </div>
+
+      {/* Progres menuju milestone berikutnya (goal-gradient) */}
+      {streak > 0 && nextMs && (
+        <p className="text-[11px] text-slate-400 mb-3 dark:text-slate-500">
+          {nextMs - streak} {streakUnit} lagi menuju {nextMs} 🔥
+        </p>
+      )}
+      {(streak === 0 || !nextMs) && <div className="mb-3" />}
 
       {/* 7-day row — hanya hari ini & kemarin yang bisa diubah; sisanya riwayat */}
       {cap > 1 && (
@@ -492,7 +621,7 @@ function HabitCard({
               // key berubah tiap ketukan → animasi pop replay
               key={shouldPop ? pop.n : 0}
               className={`w-7 h-7 rounded-full grid place-items-center border-2 text-xs font-semibold tabular-nums transition-colors ${
-                shouldPop ? 'anim-pop ' : ''
+                shouldPop ? 'anim-check-fill ' : ''
               }${
                 excused
                   ? 'bg-amber-400 border-amber-400 text-white dark:bg-amber-500 dark:border-amber-500'
@@ -562,7 +691,7 @@ function HabitCard({
           }`}
         >
           <Thermometer size={14} />
-          {excusedToday ? 'Batalkan tanda sakit hari ini' : 'Sakit/berhalangan hari ini?'}
+          {excusedToday ? 'Batalkan tanda sakit hari ini' : 'Sakit/berhalangan? Streak tetap aman'}
         </button>
 
         {/* Toggle riwayat heatmap */}
@@ -741,11 +870,12 @@ function HabitModal({
   onClose,
 }: {
   initial: HabitType | null;
-  onSave: (name: string, icon: string | undefined, target: number, period: 'day' | 'week') => void;
+  onSave: (name: string, icon: string | undefined, target: number, period: 'day' | 'week', why?: string) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [icon, setIcon] = useState(initial?.icon ?? '');
+  const [why, setWhy] = useState(initial?.why ?? '');
   const [period, setPeriod] = useState<'day' | 'week'>(initial?.period ?? 'day');
   const [target, setTarget] = useState<number>(Math.max(1, Math.floor(initial?.target ?? 1)));
   const [error, setError] = useState('');
@@ -763,7 +893,7 @@ function HabitModal({
 
   const handleSave = () => {
     if (!name.trim()) { setError('Nama habit wajib diisi.'); return; }
-    onSave(toTitleCase(name), icon.trim() || undefined, clampedTarget, period);
+    onSave(toTitleCase(name), icon.trim() || undefined, clampedTarget, period, why.trim() || undefined);
   };
 
   return (
@@ -896,6 +1026,25 @@ function HabitModal({
               {period === 'day'
                 ? 'Contoh: Sholat → 5 kali setiap hari.'
                 : 'Contoh: Olahraga → 3 hari berbeda tiap minggu.'}
+            </p>
+          </div>
+
+          {/* Alasan / identitas (opsional) */}
+          <div>
+            <label htmlFor="habit-why" className="text-sm text-slate-500 mb-1 block dark:text-slate-400">
+              Kenapa? <span className="text-slate-400 font-normal dark:text-slate-500">(opsional)</span>
+            </label>
+            <input
+              id="habit-why"
+              type="text"
+              placeholder="Contoh: Karena aku orang yang sehat"
+              value={why}
+              onChange={(e) => setWhy(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+              className="w-full border border-mist rounded-xl px-4 py-2.5 text-deep-navy placeholder:text-slate-300 focus:outline-none focus:border-ocean-blue focus:ring-2 focus:ring-sky-tint/30 dark:border-night-border dark:bg-night dark:text-slate-100 dark:placeholder:text-slate-600"
+            />
+            <p className="text-[11px] text-slate-400 mt-1 dark:text-slate-500">
+              Alasanmu muncul di kartu — pengingat kecil kenapa ini penting.
             </p>
           </div>
 

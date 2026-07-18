@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import QuickAddButton from './QuickAddButton';
 
 interface LayoutProps {
   children: ReactNode;
@@ -19,6 +20,7 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+      <QuickAddButton />
       <BottomNav />
     </div>
   );

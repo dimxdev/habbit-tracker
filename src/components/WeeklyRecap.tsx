@@ -1,4 +1,4 @@
-import { BarChart3, TrendingUp, TrendingDown } from 'lucide-react';
+import { BarChart3, TrendingUp, Sparkles } from 'lucide-react';
 import type { AppData, Habit } from '../types';
 import { shiftDateKey, parseDateKey } from '../utils/helpers';
 import { activeHabits, isDayCounted, weeklyScore } from '../utils/habits';
@@ -68,18 +68,18 @@ export default function WeeklyRecap({
         })}
       </div>
 
-      {/* Terbaik / perlu perhatian */}
+      {/* Terbaik / fokus pekan depan (nada menyemangati, bukan menghakimi) */}
       <div className="mt-4 space-y-2 border-t border-mist pt-3 dark:border-night-border">
         <RankRow
           icon={<TrendingUp size={15} className="text-green-500" />}
-          caption="Terbaik minggu ini"
+          caption="Bintang minggu ini ⭐"
           habit={best.habit}
           score={best.score}
         />
         {worst && (
           <RankRow
-            icon={<TrendingDown size={15} className="text-amber-500" />}
-            caption="Perlu perhatian"
+            icon={<Sparkles size={15} className="text-sky-tint" />}
+            caption="Fokus pekan depan 💪"
             habit={worst.habit}
             score={worst.score}
           />

@@ -44,6 +44,9 @@ export interface Habit {
   // Tanggal diarsipkan ('YYYY-MM-DD'). Bila ada, habit disembunyikan dari
   // daftar aktif tapi riwayatnya tetap disimpan.
   archivedAt?: string;
+  // Alasan/identitas opsional — "kenapa" kamu menjalani habit ini
+  // (mis. "Karena aku orang yang sehat"). Ditampilkan tipis di kartu.
+  why?: string;
 }
 
 export interface AppData {
@@ -64,6 +67,8 @@ export interface AppData {
   // Id habit yang ditandai sakit/berhalangan per tanggal ('YYYY-MM-DD' -> [habitId]).
   // Streak tidak putus pada hari ini, tapi juga tidak bertambah.
   habitExcused?: Record<string, string[]>;
+  // Badge/pencapaian yang sudah diraih (badgeId -> tanggal diraih 'YYYY-MM-DD').
+  badges?: Record<string, string>;
   // Aktifkan kata-kata motivasi kustom (menggantikan kutipan bawaan)
   useCustomMotivation?: boolean;
   // Kumpulan kata-kata motivasi kustom yang pernah ditambahkan (tidak dihapus)

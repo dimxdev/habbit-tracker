@@ -19,7 +19,8 @@ export const addHabit = (
   name: string,
   icon?: string,
   target = 1,
-  period: 'day' | 'week' = 'day'
+  period: 'day' | 'week' = 'day',
+  why?: string
 ): AppData => ({
   ...data,
   habits: [
@@ -28,6 +29,7 @@ export const addHabit = (
       id: generateId(),
       name,
       ...(icon ? { icon } : {}),
+      ...(why?.trim() ? { why: why.trim() } : {}),
       target: Math.max(1, Math.floor(target)),
       period,
       createdAt: getDateKey(),
@@ -41,12 +43,20 @@ export const updateHabit = (
   name: string,
   icon?: string,
   target = 1,
-  period: 'day' | 'week' = 'day'
+  period: 'day' | 'week' = 'day',
+  why?: string
 ): AppData => ({
   ...data,
   habits: (data.habits ?? []).map((h) =>
     h.id === id
-      ? { ...h, name, icon: icon || undefined, target: Math.max(1, Math.floor(target)), period }
+      ? {
+          ...h,
+          name,
+          icon: icon || undefined,
+          why: why?.trim() || undefined,
+          target: Math.max(1, Math.floor(target)),
+          period,
+        }
       : h
   ),
 });
@@ -336,6 +346,46 @@ export const computeBestStreak = (data: AppData, habit: Habit, todayKey: string)
     cursor = shiftDateKey(cursor, 1);
   }
   return best;
+};
+
+// ── Milestone & tingkat api ─────────────────────────────────────────
+export const MILESTONES = [7, 14, 30, 50, 100, 200, 365];
+
+// Milestone berikutnya yang belum dicapai (null bila sudah lewat semua).
+export const getNextMilestone = (streak: number): number | null =>
+  MILESTONES.find((m) => m > streak) ?? null;
+
+// Milestone yang baru saja dilewati saat streak naik dari before -> after.
+export const crossedMilestone = (before: number, after: number): number | null =>
+  MILESTONES.find((m) => before < m && after >= m) ?? null;
+
+// Tingkatan api berdasarkan panjang streak — untuk warna & efek eskalasi.
+export type FlameTier = { id: string; label: string; className: string; glow: boolean };
+export const flameTier = (streak: number): FlameTier => {
+  if (streak >= 100) return { id: 'blue', label: 'Api biru', className: 'text-sky-400 dark:text-sky-300', glow: true };
+  if (streak >= 30) return { id: 'red', label: 'Merah membara', className: 'text-red-500', glow: true };
+  if (streak >= 7) return { id: 'orange', label: 'Oranye', className: 'text-orange-500', glow: false };
+  return { id: 'ember', label: 'Bara', className: 'text-amber-500', glow: false };
+};
+
+// Streak (harian) yang "terancam hangus": hari ini & kemarin sama-sama kosong,
+// padahal ada deretan yang berakhir kemarin-lusa. Bisa diselamatkan dengan
+// mencatat KEMARIN (yang masih editable). Return jumlah hari yang terancam (0 = aman).
+export const getStreakAtRisk = (data: AppData, habit: Habit, todayKey: string): number => {
+  if (getHabitPeriod(habit) === 'week') return 0;
+  if (isSettledToday(data, habit, todayKey)) return 0;
+  const yKey = shiftDateKey(todayKey, -1);
+  const yesterdayAlive =
+    isDayComplete(data, yKey, habit) || isHabitExcused(data, yKey, habit.id);
+  if (yesterdayAlive) return 0; // masih aman lewat kelonggaran
+  // Hitung deret yang berakhir di kemarin-lusa
+  let n = 0;
+  let cursor = shiftDateKey(todayKey, -2);
+  while (isDayComplete(data, cursor, habit) || isHabitExcused(data, cursor, habit.id)) {
+    if (isDayComplete(data, cursor, habit)) n++;
+    cursor = shiftDateKey(cursor, -1);
+  }
+  return n;
 };
 
 // Apakah suatu hari "dihitung selesai" untuk rekap:
