@@ -21,7 +21,27 @@
 /* Samakan background <body> dengan tema, supaya area yang muncul akibat
    margin-collapse (mis. mt-6 di header) tidak terlihat putih saat dark mode. */
 @layer base {
+  /* Cegah scroll horizontal yang tak diinginkan di mobile (mis. Samsung
+     Internet) — tidak ada konten yang memang perlu lebih lebar dari layar. */
+  html,
   body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* Sembunyikan scrollbar halaman (tetap bisa di-scroll) supaya tampil
+     lebih bersih/app-like — termasuk di Samsung Internet (Chromium). */
+  html,
+  body {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* Edge lama */
+  }
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    display: none; /* Chromium/WebKit & Samsung Internet */
+  }
+  body {
+    position: relative;
     background-color: var(--color-cloud-white);
     -webkit-tap-highlight-color: transparent;
   }
@@ -52,6 +72,15 @@
 }
 
 @layer components {
+  /* Sembunyikan scrollbar pada container tertentu (mis. tab horizontal) */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Kartu kaca: tembus pandang + blur + kilau tepi (specular highlight) */
   .glass-card {
     border-radius: 1rem;

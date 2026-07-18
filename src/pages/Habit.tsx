@@ -147,8 +147,12 @@ export default function Habit() {
 // Daftar habit dengan drag & drop untuk mengurutkan ulang (via handle grip).
 // Hanya habit yang belum selesai hari ini yang bisa diseret — yang sudah
 // selesai otomatis turun ke bawah dan urutannya tidak relevan untuk hari ini.
-// Perpindahan (baik dari drag maupun dari auto-sink saat dicentang) dianimasikan
-// dengan teknik FLIP: ukur posisi lama, lalu geser mundur & animasikan ke posisi baru.
+//
+// Perpindahan (drag maupun auto-sink saat dicentang) dianimasikan dengan FLIP,
+// tapi pengukuran memakai `offsetTop` (bukan getBoundingClientRect) supaya
+// KEBAL terhadap transform yang sedang berjalan — inilah yang dulu bikin
+// kartu numpuk & freeze saat digeser cepat. Animasi pakai Web Animations API
+// agar tidak meninggalkan sisa inline-transform yang nyangkut.
 function HabitList({
   habits,
   data,
@@ -177,49 +181,61 @@ function HabitList({
   const pendingCount = habits.filter((h) => !isSettledToday(data, h, todayKey)).length;
 
   const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef(new Map<string, HTMLDivElement>()).current;
-  const dragInfo = useRef<{ startClientY: number; startTop: number; height: number } | null>(null);
-  const prevRects = useRef(new Map<string, DOMRect>()).current;
+  // Posisi offsetTop tiap kartu pada render sebelumnya (untuk FLIP)
+  const prevTops = useRef(new Map<string, number>()).current;
+  // Info drag aktif; disimpan di ref supaya gerakan tidak memicu render
+  const drag = useRef<{ id: string; startPointerY: number; startOffsetTop: number } | null>(null);
+  const pointerY = useRef(0);
 
   const order = liveOrder ?? baseOrder;
 
-  // FLIP: setiap kali urutan berubah (drag atau auto-sink), geser item yang
-  // bukan sedang diseret dari posisi lamanya lalu animasikan ke posisi baru.
+  // Tempel kartu yang diseret ke posisi jari. Karena slot-nya bisa berpindah
+  // saat urutan berubah, kompensasikan dengan selisih offsetTop-nya.
+  const applyDragTransform = () => {
+    const st = drag.current;
+    if (!st) return;
+    const el = itemRefs.get(st.id);
+    if (!el) return;
+    const ty = pointerY.current - st.startPointerY - (el.offsetTop - st.startOffsetTop);
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${ty}px) scale(1.03)`;
+    el.style.zIndex = '30';
+    el.style.position = 'relative';
+    el.style.boxShadow = '0 24px 48px -12px rgba(10,37,64,0.35)';
+    el.style.cursor = 'grabbing';
+    el.style.willChange = 'transform';
+  };
+
+  // FLIP semua kartu (kecuali yang sedang diseret) tiap kali layout berubah.
   useLayoutEffect(() => {
-    const nextRects = new Map<string, DOMRect>();
     itemRefs.forEach((el, id) => {
-      if (id === draggingId) return;
-      nextRects.set(id, el.getBoundingClientRect());
+      if (id === drag.current?.id) return;
+      const last = el.offsetTop;
+      const first = prevTops.get(id);
+      if (first !== undefined && Math.abs(first - last) > 0.5) {
+        el.animate(
+          [{ transform: `translateY(${first - last}px)` }, { transform: 'translateY(0)' }],
+          { duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        );
+      }
     });
-    nextRects.forEach((rect, id) => {
-      const before = prevRects.get(id);
-      if (!before) return;
-      const dy = before.top - rect.top;
-      if (Math.abs(dy) < 0.5) return;
-      const el = itemRefs.get(id);
-      if (!el) return;
-      el.style.transition = 'none';
-      el.style.transform = `translateY(${dy}px)`;
-      el.getBoundingClientRect(); // paksa reflow
-      requestAnimationFrame(() => {
-        el.style.transition = 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
-        el.style.transform = '';
-      });
-    });
-    prevRects.clear();
-    nextRects.forEach((rect, id) => prevRects.set(id, rect));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order.join('|')]);
+    // Simpan posisi terkini sebagai acuan FLIP berikutnya
+    prevTops.clear();
+    itemRefs.forEach((el, id) => prevTops.set(id, el.offsetTop));
+    // Kartu yang diseret ikut disesuaikan ulang setelah slot-nya bergeser
+    applyDragTransform();
+  });
 
   const startDrag = (habit: HabitType) => (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const el = itemRefs.get(habit.id);
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragInfo.current = { startClientY: e.clientY, startTop: rect.top, height: rect.height };
+    drag.current = { id: habit.id, startPointerY: e.clientY, startOffsetTop: el.offsetTop };
+    pointerY.current = e.clientY;
     setLiveOrder(baseOrder);
-    setDraggingId(habit.id);
+    applyDragTransform();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try { navigator.vibrate(10); } catch { /* noop */ }
@@ -227,13 +243,15 @@ function HabitList({
   };
 
   const moveDrag = (habit: HabitType) => (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragInfo.current || draggingId !== habit.id) return;
+    if (!drag.current || drag.current.id !== habit.id) return;
     e.preventDefault();
-    const deltaY = e.clientY - dragInfo.current.startClientY;
-    const el = itemRefs.get(habit.id);
-    if (el) el.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+    pointerY.current = e.clientY;
+    applyDragTransform(); // ikuti jari seketika
 
-    const centerY = dragInfo.current.startTop + deltaY + dragInfo.current.height / 2;
+    // Tentukan indeks target dari posisi jari — pakai offsetTop (kebal transform)
+    const container = containerRef.current;
+    if (!container) return;
+    const containerTop = container.getBoundingClientRect().top;
     const currentOrder = liveOrder ?? baseOrder;
     const others = currentOrder.filter((id) => id !== habit.id);
 
@@ -241,12 +259,11 @@ function HabitList({
     for (const id of others) {
       const otherEl = itemRefs.get(id);
       if (!otherEl) continue;
-      const rect = otherEl.getBoundingClientRect();
-      if (centerY > rect.top + rect.height / 2) idx++;
+      const centerY = containerTop + otherEl.offsetTop + otherEl.offsetHeight / 2;
+      if (e.clientY > centerY) idx++;
     }
     // Tidak boleh diseret melewati zona habit yang sudah selesai hari ini
-    const maxIdx = Math.max(0, pendingCount - 1);
-    idx = Math.min(idx, maxIdx);
+    idx = Math.min(idx, Math.max(0, pendingCount - 1));
 
     const next = [...others];
     next.splice(idx, 0, habit.id);
@@ -256,29 +273,33 @@ function HabitList({
   const endDrag = (habit: HabitType) => () => {
     const el = itemRefs.get(habit.id);
     if (el) {
-      el.style.transition = 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)';
+      // Bersihkan semua gaya drag, biarkan menyettle ke slot-nya dengan halus
+      el.style.transition = 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
       el.style.transform = '';
+      el.style.zIndex = '';
+      el.style.boxShadow = '';
+      el.style.position = '';
+      el.style.cursor = '';
+      el.style.willChange = '';
+      window.setTimeout(() => { if (el) el.style.transition = ''; }, 260);
     }
     if (liveOrder && liveOrder.join('|') !== baseOrder.join('|')) {
       onReorder(liveOrder);
     }
-    dragInfo.current = null;
-    setDraggingId(null);
+    drag.current = null;
     setLiveOrder(null);
   };
 
   return (
-    <div className="space-y-3">
+    <div ref={containerRef} className="relative space-y-3">
       {order.map((id) => {
         const habit = habitMap.get(id);
         if (!habit) return null;
         const isPending = !isSettledToday(data, habit, todayKey);
-        const isDragging = draggingId === habit.id;
         return (
           <HabitCard
             key={habit.id}
             cardRef={(el) => { if (el) itemRefs.set(habit.id, el); else itemRefs.delete(habit.id); }}
-            isDragging={isDragging}
             draggable={isPending}
             dragHandleProps={{
               onPointerDown: startDrag(habit),
@@ -304,7 +325,6 @@ function HabitList({
 
 function HabitCard({
   cardRef,
-  isDragging,
   draggable,
   dragHandleProps,
   data,
@@ -318,7 +338,6 @@ function HabitCard({
   onDelete,
 }: {
   cardRef?: (el: HTMLDivElement | null) => void;
-  isDragging?: boolean;
   draggable?: boolean;
   dragHandleProps?: {
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
@@ -366,11 +385,8 @@ function HabitCard({
       : null;
 
   return (
-    <div
-      ref={cardRef}
-      style={isDragging ? { zIndex: 30, boxShadow: '0 24px 48px -12px rgba(10,37,64,0.35)' } : undefined}
-      className="glass-card p-4 md:p-5 shadow-sm"
-    >
+    <div ref={cardRef} className="glass-card p-4 md:p-5 shadow-sm">
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-1.5 min-w-0">
