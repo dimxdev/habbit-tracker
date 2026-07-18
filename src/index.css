@@ -21,12 +21,13 @@
 /* Samakan background <body> dengan tema, supaya area yang muncul akibat
    margin-collapse (mis. mt-6 di header) tidak terlihat putih saat dark mode. */
 @layer base {
-  /* Cegah scroll horizontal yang tak diinginkan di mobile (mis. Samsung
-     Internet) — tidak ada konten yang memang perlu lebih lebar dari layar. */
-  html,
+  /* Cegah scroll horizontal TANPA mematikan momentum scroll.
+     `overflow-x: clip` hanya MEMOTONG luapan — beda dengan `hidden` yang
+     membuat scroll-container baru & bisa mematikan inersia scroll native
+     (bikin scroll terasa berat, terutama di Samsung Internet). */
   body {
-    overflow-x: hidden;
-    max-width: 100%;
+    overflow-x: hidden; /* fallback untuk browser lama (mis. Safari iOS < 16) */
+    overflow-x: clip; /* modern: menang di Samsung Internet/Chrome, momentum tetap native */
   }
 
   /* Sembunyikan scrollbar halaman (tetap bisa di-scroll) supaya tampil
